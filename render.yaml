@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ago-whatsapp-inbox
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WHATSAPP_VERIFY_TOKEN
+        value: ago-verify-123
+      - key: GRAPH_API_VERSION
+        value: v21.0
+      - key: CUSTOMER_LANG
+        value: en
+      - key: AGENT_LANG
+        value: vi
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: GOOGLE_TRANSLATE_API_KEY
+        sync: false
