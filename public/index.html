@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AGO WhatsApp Team Inbox</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  :root{--teal:#128C7E;--dark:#075E54;--bg:#ECE5DD;--sent:#DCF8C6;--muted:#667781;--tr:#0a7cff}
+  body{background:#d9dbd4;color:#111b21}
+  .hidden{display:none!important}
+
+  /* Login */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0b7c6e,#5fd0a8)}
+  .card{background:#fff;padding:32px;border-radius:14px;width:340px;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+  .card h1{font-size:20px;margin-bottom:4px;color:var(--dark)}
+  .card p{font-size:13px;color:var(--muted);margin-bottom:18px}
+  .card input{width:100%;padding:11px 12px;border:1px solid #d1d7db;border-radius:9px;margin-bottom:12px;font-size:14px}
+  .card button{width:100%;padding:12px;background:var(--teal);color:#fff;border:none;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer}
+  .card button:hover{background:var(--dark)}
+  .err{color:#d33;font-size:13px;margin-bottom:10px;min-height:18px}
+
+  /* App */
+  #app{height:100vh;display:flex;flex-direction:column}
+  .top{background:linear-gradient(90deg,#0b7c6e,#3bb6c9);color:#fff;padding:9px 16px;display:flex;align-items:center;gap:12px}
+  .top .logo{font-weight:800}
+  .top .cfg{margin-left:12px;font-size:12px;opacity:.9}
+  .top .right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px}
+  .top .right button{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:12.5px}
+  .body{flex:1;display:flex;min-height:0}
+
+  .side{width:320px;background:#fff;border-right:1px solid #e9edef;display:flex;flex-direction:column}
+  .side h3{padding:12px 14px;font-size:14px;background:#f0f2f5;display:flex;justify-content:space-between;align-items:center}
+  .side .list{flex:1;overflow-y:auto}
+  .conv{display:flex;gap:11px;padding:11px 14px;border-bottom:1px solid #f0f2f5;cursor:pointer}
+  .conv:hover,.conv.active{background:#f0f2f5}
+  .av{width:42px;height:42px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+  .conv .b{flex:1;min-width:0}
+  .conv .n{font-weight:600;font-size:14px;display:flex;justify-content:space-between}
+  .conv .m{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{background:var(--teal);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
+  .assign-tag{font-size:10.5px;color:#fff;background:#e29578;border-radius:4px;padding:1px 6px;margin-left:4px}
+
+  .main{flex:1;display:flex;flex-direction:column;background:var(--bg);min-width:0}
+  .mhead{background:#f0f2f5;padding:10px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e0e0e0}
+  .mhead .n{font-weight:600}
+  .mhead select{margin-left:auto;padding:6px 8px;border-radius:7px;border:1px solid #d1d7db;font-size:12.5px}
+  .msgs{flex:1;overflow-y:auto;padding:18px 7%;display:flex;flex-direction:column;gap:9px}
+  .row{display:flex}.row.in{justify-content:flex-start}.row.out{justify-content:flex-end}
+  .bub{max-width:74%;padding:8px 10px 6px;border-radius:10px;font-size:14px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+  .row.in .bub{background:#fff;border-top-left-radius:2px}
+  .row.out .bub{background:var(--sent);border-top-right-radius:2px}
+  .tr{margin-top:5px;padding-top:5px;border-top:1px dashed #c9d3cc;font-size:12.5px;color:var(--tr);display:flex;gap:5px}
+  .tr .tag{font-size:9.5px;font-weight:800;color:#fff;background:var(--tr);border-radius:4px;padding:1px 5px;height:15px;line-height:13px;flex-shrink:0;margin-top:1px}
+  .time{font-size:10px;color:var(--muted);text-align:right;margin-top:2px}
+  .empty{margin:auto;color:var(--muted);text-align:center}
+
+  .compose{background:#f0f2f5;padding:10px 14px;border-top:1px solid #e0e0e0}
+  .compose.disabled{opacity:.5;pointer-events:none}
+  .prev{font-size:12.5px;color:var(--tr);background:#eef6ff;border:1px solid #cfe4ff;border-radius:8px;padding:7px 10px;margin-bottom:8px;min-height:32px}
+  .prev .tag{font-size:9.5px;font-weight:800;color:#fff;background:var(--tr);border-radius:4px;padding:1px 5px;margin-right:6px}
+  .crow{display:flex;gap:10px;align-items:flex-end}
+  .crow textarea{flex:1;border:1px solid #d1d7db;border-radius:10px;padding:10px 12px;font-size:14px;resize:none;height:44px}
+  .crow .send{background:var(--teal);color:#fff;border:none;width:44px;height:44px;border-radius:50%;font-size:19px;cursor:pointer}
+
+  /* Users panel */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:10}
+  .modal .inner{background:#fff;border-radius:12px;width:min(720px,94vw);max-height:88vh;overflow:auto;padding:20px}
+  .modal h2{font-size:18px;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border-bottom:1px solid #eee;padding:7px 8px;text-align:left}
+  .chk{display:inline-flex;gap:4px;align-items:center;margin-right:8px;font-size:12px}
+  .newuser{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .newuser input,.newuser select{padding:8px;border:1px solid #d1d7db;border-radius:7px;font-size:13px}
+  .btn{background:var(--teal);color:#fff;border:none;border-radius:7px;padding:8px 12px;cursor:pointer;font-size:13px}
+  .btn.g{background:#eee;color:#333}
+  .x{float:right;cursor:pointer;font-size:20px;color:#888}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <form class="card" id="loginForm">
+    <h1>AGO WhatsApp Inbox</h1>
+    <p>Đăng nhập để vào hộp thư team</p>
+    <div class="err" id="loginErr"></div>
+    <input id="u" placeholder="Tài khoản" autocomplete="username" />
+    <input id="p" type="password" placeholder="Mật khẩu" autocomplete="current-password" />
+    <button type="submit">Đăng nhập</button>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="top">
+    <span class="logo">🌐 AGO WhatsApp Inbox</span>
+    <span class="cfg">📥 Anh→Việt · 📤 Việt→Anh</span>
+    <div class="right">
+      <button id="usersBtn" class="hidden">👥 Phân quyền</button>
+      <span id="who"></span>
+      <button id="logout">Đăng xuất</button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="side">
+      <h3>Hội thoại <span id="convCount" style="color:var(--muted);font-weight:500"></span></h3>
+      <div class="list" id="convList"></div>
+    </div>
+    <div class="main">
+      <div class="mhead" id="mhead"><span class="n" id="mName">Chọn một hội thoại</span></div>
+      <div class="msgs" id="msgs"><div class="empty">Chọn hội thoại bên trái để bắt đầu</div></div>
+      <div class="compose disabled" id="compose">
+        <div class="prev" id="prev"><span class="tag">EN</span>Bản dịch tiếng Anh khách sẽ nhận…</div>
+        <div class="crow">
+          <textarea id="input" placeholder="Gõ tiếng Việt… (sẽ dịch sang Anh trước khi gửi)"></textarea>
+          <button class="send" id="send">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const api = (p,opt={})=>fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opt}).then(async r=>{if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||r.status);return r.json()});
+let me=null, current=null, convs=[], agents=[], typingTimer=null;
+
+// ---- Login ----
+document.getElementById('loginForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const err=document.getElementById('loginErr'); err.textContent='';
+  try{
+    await api('/api/login',{method:'POST',body:JSON.stringify({username:u.value,password:p.value})});
+    await boot();
+  }catch(ex){ err.textContent='Sai tài khoản hoặc mật khẩu'; }
+});
+document.getElementById('logout').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload()};
+
+async function boot(){
+  try{ me=await api('/api/me'); }catch{ show('login'); return; }
+  show('app');
+  document.getElementById('who').textContent=`${me.name} · ${me.role}`;
+  if(me.permissions.includes('manage_users')) document.getElementById('usersBtn').classList.remove('hidden');
+  if(me.permissions.includes('assign')) agents=await api('/api/agents').catch(()=>[]);
+  await loadConvs();
+  startStream();
+}
+function show(which){
+  document.getElementById('login').classList.toggle('hidden', which!=='login');
+  document.getElementById('app').classList.toggle('hidden', which!=='app');
+}
+
+// ---- Conversations ----
+async function loadConvs(){
+  convs=await api('/api/conversations');
+  document.getElementById('convCount').textContent=`(${convs.length})`;
+  const el=document.getElementById('convList'); el.innerHTML='';
+  if(!convs.length){ el.innerHTML='<div class="empty" style="padding:20px">Chưa có hội thoại nào.<br><small>Tin khách nhắn tới sẽ hiện ở đây.</small></div>'; return; }
+  for(const c of convs){
+    const last=c.last?(c.last.dir==='in'?c.last.trans||c.last.orig:'Bạn: '+(c.last.trans||c.last.orig)):'';
+    const d=document.createElement('div'); d.className='conv'+(current===c.id?' active':'');
+    d.innerHTML=`<div class="av">${(c.name||'?')[0].toUpperCase()}</div>
+      <div class="b"><div class="n"><span>${esc(c.name)}${c.assignedTo?`<span class="assign-tag">${esc(c.assignedTo)}</span>`:''}</span>${c.unread?`<span class="badge">${c.unread}</span>`:''}</div>
+      <div class="m">${esc(last).slice(0,60)}</div></div>`;
+    d.onclick=()=>openConv(c.id);
+    el.appendChild(d);
+  }
+}
+
+async function openConv(id){
+  current=id;
+  const c=await api('/api/conversations/'+id);
+  document.getElementById('mName').textContent=c.name+' · '+id;
+  const head=document.getElementById('mhead');
+  head.querySelector('select')?.remove();
+  if(me.permissions.includes('assign')){
+    const sel=document.createElement('select');
+    sel.innerHTML='<option value="">— Gán cho sale —</option>'+agents.map(a=>`<option value="${a.username}" ${c.assignedTo===a.username?'selected':''}>${esc(a.name)}</option>`).join('');
+    sel.onchange=()=>api('/api/conversations/'+id+'/assign',{method:'POST',body:JSON.stringify({agent:sel.value})}).then(loadConvs);
+    head.appendChild(sel);
+  }
+  renderMsgs(c.messages);
+  document.getElementById('compose').classList.toggle('disabled', !me.permissions.includes('reply'));
+  loadConvs();
+}
+
+function renderMsgs(msgs){
+  const box=document.getElementById('msgs'); box.innerHTML='';
+  for(const m of msgs){
+    const row=document.createElement('div'); row.className='row '+(m.dir==='in'?'in':'out');
+    const tag=m.dir==='in'?'VI':'GỬI·VI';
+    row.innerHTML=`<div class="bub"><div>${esc(m.orig)}</div>
+      ${m.trans?`<div class="tr"><span class="tag">${tag}</span><span>${esc(m.trans)}</span></div>`:''}
+      <div class="time">${fmt(m.ts)}${m.dir==='out'?' ✓✓':''}</div></div>`;
+    box.appendChild(row);
+  }
+  box.scrollTop=box.scrollHeight;
+}
+
+// ---- Compose + live translate ----
+const input=document.getElementById('input'), prev=document.getElementById('prev');
+input.addEventListener('input',()=>{
+  clearTimeout(typingTimer);
+  if(!input.value.trim()){ prev.innerHTML='<span class="tag">EN</span>Bản dịch tiếng Anh khách sẽ nhận…'; return; }
+  typingTimer=setTimeout(async()=>{
+    const tr=await api('/api/translate',{method:'POST',body:JSON.stringify({text:input.value,dir:'out'})}).catch(()=>({text:''}));
+    prev.innerHTML='<span class="tag">EN</span>'+esc(tr.text||'')+(tr.translated?'':' <i style="opacity:.6">(chưa bật API dịch)</i>');
+  },400);
+});
+document.getElementById('send').onclick=async()=>{
+  const t=input.value.trim(); if(!t||!current)return;
+  try{ await api('/api/conversations/'+current+'/send',{method:'POST',body:JSON.stringify({text:t})});
+    input.value=''; prev.innerHTML='<span class="tag">EN</span>Bản dịch tiếng Anh khách sẽ nhận…';
+    openConv(current);
+  }catch(ex){ alert('Gửi lỗi: '+ex.message); }
+};
+
+// ---- Realtime ----
+function startStream(){
+  const es=new EventSource('/api/stream');
+  es.onmessage=e=>{ const ev=JSON.parse(e.data);
+    if(ev.type==='message'&&ev.conversation.id===current) openConv(current);
+    loadConvs();
+  };
+  es.onerror=()=>{ es.close(); setTimeout(startStream,3000); };
+}
+
+// ---- Users / Phân quyền ----
+document.getElementById('usersBtn').onclick=openUsers;
+async function openUsers(){
+  const [users,perms]=await Promise.all([api('/api/users'),api('/api/permissions')]);
+  const permKeys=Object.keys(perms);
+  const rows=users.map(u=>`<tr><td><b>${esc(u.name)}</b><br><small>${esc(u.username)}</small></td>
+    <td><select data-role="${u.username}"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='leader'?'selected':''}>leader</option><option ${u.role==='agent'?'selected':''}>agent</option></select></td>
+    <td>${permKeys.map(k=>`<label class="chk"><input type="checkbox" data-perm="${u.username}:${k}" ${u.effective.includes(k)?'checked':''}>${k}</label>`).join('')}</td>
+    <td><button class="btn" data-save="${u.username}">Lưu</button> <button class="btn g" data-del="${u.username}">Xóa</button></td></tr>`).join('');
+  const html=`<div class="modal" id="umodal"><div class="inner">
+    <span class="x" id="uclose">×</span><h2>Phân quyền team</h2>
+    <div class="newuser">
+      <input id="nu_name" placeholder="Tên hiển thị"><input id="nu_user" placeholder="Tài khoản"><input id="nu_pass" placeholder="Mật khẩu">
+      <select id="nu_role"><option value="agent">agent</option><option value="leader">leader</option><option value="admin">admin</option></select>
+      <button class="btn" id="nu_add">＋ Thêm sale</button>
+    </div>
+    <table><tr><th>Người dùng</th><th>Vai trò</th><th>Quyền</th><th></th></tr>${rows}</table>
+    <p style="font-size:12px;color:#888;margin-top:10px">Quyền: <b>view_all</b>=xem mọi chat · <b>reply</b>=trả lời · <b>assign</b>=gán chat · <b>manage_users</b>=quản trị. Không có view_all → sale chỉ thấy chat được gán cho mình.</p>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  document.getElementById('uclose').onclick=()=>umodal.remove();
+  document.getElementById('nu_add').onclick=async()=>{
+    try{ await api('/api/users',{method:'POST',body:JSON.stringify({name:nu_name.value,username:nu_user.value,password:nu_pass.value,role:nu_role.value})});
+      umodal.remove(); openUsers(); }catch(ex){ alert(ex.message); }
+  };
+  document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
+    const un=b.dataset.save;
+    const role=document.querySelector(`[data-role="${un}"]`).value;
+    const permissions=[...document.querySelectorAll(`[data-perm^="${un}:"]`)].filter(c=>c.checked).map(c=>c.dataset.perm.split(':')[1]);
+    await api('/api/users/'+un+'/permissions',{method:'PUT',body:JSON.stringify({role,permissions})});
+    alert('Đã lưu quyền cho '+un);
+  });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Xóa '+b.dataset.del+'?'))return;
+    await api('/api/users/'+b.dataset.del,{method:'DELETE'}); umodal.remove(); openUsers();
+  });
+}
+
+// ---- utils ----
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function fmt(ts){const d=new Date(ts);return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')}
+
+boot();
+</script>
+</body>
+</html>
