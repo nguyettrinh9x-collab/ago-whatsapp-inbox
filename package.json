@@ -1,0 +1,14 @@
+{
+  "name": "ago-whatsapp-inbox",
+  "version": "1.0.0",
+  "description": "AGO WhatsApp Team Inbox — nhận/gửi WhatsApp + tự dịch Anh<->Việt + phân quyền team.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
