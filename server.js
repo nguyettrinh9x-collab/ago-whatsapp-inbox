@@ -204,7 +204,7 @@ app.post('/api/wa/connect', requireAuth, requirePerm('manage_users'), (req, res)
   startWA().catch(() => {});
   res.json({ ok: true, status: waStatus });
 });
-app.Aost('/api/wa/logout', requireAuth, requirePerm('manage_users'), async (req, res) => {
+app.post('/api/wa/logout', requireAuth, requirePerm('manage_users'), async (req, res) => {
   try { if (waSock) await waSock.logout(); } catch {}
   try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
   waSock = null; waStatus = 'disconnected'; waQR = null; waMe = null; waStarting = false;
