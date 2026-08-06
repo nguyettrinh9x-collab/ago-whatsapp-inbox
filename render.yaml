@@ -1,24 +1,23 @@
+# Render Blueprint — bản kết nối WhatsApp cá nhân qua QR (Baileys).
+# QUAN TRỌNG: kiểu QR cần chạy 24/7 + ổ đĩa BỀN để giữ phiên đăng nhập.
+# => KHÔNG dùng plan free (free ngủ + xoá dữ liệu -> mất phiên, phải quét QR lại liên tục).
 services:
   - type: web
     name: ago-whatsapp-inbox
     runtime: node
-    plan: free
+    plan: starter            # cần plan trả phí để chạy liên tục
     buildCommand: npm install
     startCommand: node server.js
+    disk:
+      name: ago-data
+      mountPath: /opt/render/project/src/data   # giữ phiên WhatsApp + hội thoại
+      sizeGB: 1
     envVars:
       - key: JWT_SECRET
         generateValue: true
-      - key: WHATSAPP_VERIFY_TOKEN
-        value: ago-verify-123
-      - key: GRAPH_API_VERSION
-        value: v21.0
       - key: CUSTOMER_LANG
         value: en
       - key: AGENT_LANG
         value: vi
-      - key: WHATSAPP_TOKEN
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
       - key: GOOGLE_TRANSLATE_API_KEY
-        sync: false
+        sync: false          # điền key Google Dịch để bật tự dịch
