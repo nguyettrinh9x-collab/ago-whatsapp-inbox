@@ -1,5 +1,6 @@
 // AGO WhatsApp Team Inbox — kết nối WhatsApp CÁ NHÂN qua QR (Baileys).
 // Nhận/gửi WhatsApp + tự dịch Anh<->Việt + đăng nhập & phân quyền team.
+// + Bộ sưu tập ảnh (kho lưu trữ) + Thẻ tên màu (tag) kiểu Pancake.
 // LƯU Ý: dùng thư viện không chính thức (WhatsApp Web). Cần server chạy 24/7 + ổ đĩa bền.
 try { require('dotenv').config(); } catch {}
 const path = require('path');
@@ -14,7 +15,8 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 
 const SECRET = process.env.JWT_SECRET || 'dev-secret-doi-di';
@@ -25,9 +27,13 @@ const CHANNEL_LABEL = 'WhatsApp cá nhân';
 // ---------------- STORE (JSON file) ----------------
 const DATA_DIR = path.join(__dirname, 'data');
 const AUTH_DIR = path.join(DATA_DIR, 'wa-auth');   // phiên đăng nhập WhatsApp
+const MEDIA_DIR = path.join(DATA_DIR, 'media');    // ảnh kho + ảnh nhận
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const CONV_FILE = path.join(DATA_DIR, 'conversations.json');
+const LIB_FILE = path.join(DATA_DIR, 'library.json');
+const TAGS_FILE = path.join(DATA_DIR, 'tags.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const writeJSON = (f, x) => fs.writeFileSync(f, JSON.stringify(x, null, 2));
 const getUsers = () => readJSON(USERS_FILE, []);
@@ -36,13 +42,29 @@ const findUser = (n) => getUsers().find((u) => u.username.toLowerCase() === Stri
 const getConvs = () => readJSON(CONV_FILE, {});
 const saveConvs = (c) => writeJSON(CONV_FILE, c);
 const convKey = (channel, customer) => channel + '|' + customer;
+const getLib = () => readJSON(LIB_FILE, []);
+const saveLib = (x) => writeJSON(LIB_FILE, x);
+const rid = (pre) => pre + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// Thẻ tên màu mặc định (giống Pancake)
+const DEFAULT_TAGS = [
+  { id: 'phuc', label: 'Phúc',    color: '#22a06b' },
+  { id: 'tien', label: 'Tiên',    color: '#e0364f' },
+  { id: 'yen',  label: 'Yến',     color: '#f0a24b' },
+  { id: 'ktt',  label: 'KTT',     color: '#7c5cff' },
+  { id: 'chot', label: 'Đã Chốt', color: '#0a7cff' },
+  { id: 'wa',   label: 'whatsapp',color: '#12b76a' }
+];
+const getTags = () => { const t = readJSON(TAGS_FILE, null); if (!t) { writeJSON(TAGS_FILE, DEFAULT_TAGS); return DEFAULT_TAGS; } return t; };
+const saveTags = (x) => writeJSON(TAGS_FILE, x);
 
 function upsertMessage(channel, channelLabel, customer, name, m) {
   const all = getConvs();
   const key = convKey(channel, customer);
-  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, unread: 0, updatedAt: 0, messages: [] };
+  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, tags: [], unread: 0, updatedAt: 0, messages: [] };
   if (name) all[key].name = name;
   if (channelLabel) all[key].channelLabel = channelLabel;
+  if (!Array.isArray(all[key].tags)) all[key].tags = [];
   all[key].messages.push(m);
   all[key].updatedAt = m.ts;
   if (m.dir === 'in') all[key].unread = (all[key].unread || 0) + 1;
@@ -140,12 +162,27 @@ async function startWA() {
           if (!m.message || m.key.fromMe) continue;
           const jid = m.key.remoteJid || '';
           if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue; // bỏ nhóm & status
-          const text = m.message.conversation || m.message.extendedTextMessage?.text;
-          if (!text) continue;
+          const msg = m.message;
+          const text = msg.conversation || msg.extendedTextMessage?.text;
+          const imgMsg = msg.imageMessage;
+          if (!text && !imgMsg) continue;                 // bỏ loại tin chưa hỗ trợ
           const phone = jid.split('@')[0];
           const name = m.pushName || phone;
-          const tr = await toAgent(text);
-          const c = upsertMessage(CHANNEL, CHANNEL_LABEL, phone, name, { dir:'in', orig:text, trans:tr.text, translated:tr.translated, ts:tsToMs(m.messageTimestamp), by:null });
+
+          let img = null, orig = text || '';
+          if (imgMsg) {
+            orig = imgMsg.caption || '';
+            try {
+              const buffer = await downloadMediaMessage(m, 'buffer', {}, { logger: waLog, reuploadRequest: waSock.updateMediaMessage });
+              const ext = ((imgMsg.mimetype || 'image/jpeg').split('/')[1] || 'jpg').replace('jpeg', 'jpg').split(';')[0];
+              const file = rid('in_') + '.' + ext;
+              fs.writeFileSync(path.join(MEDIA_DIR, file), buffer);
+              img = '/media/' + file;
+            } catch (e) { console.error('[incoming-img]', e.message); }
+          }
+          let trans = '', translated = false;
+          if (orig) { const tr = await toAgent(orig); trans = tr.text; translated = tr.translated; }
+          const c = upsertMessage(CHANNEL, CHANNEL_LABEL, phone, name, { dir:'in', img, orig, trans, translated, ts:tsToMs(m.messageTimestamp), by:null });
           broadcast({ type:'message', conversation:c });
         } catch (e) { console.error('[incoming]', e.message); }
       }
@@ -160,6 +197,11 @@ async function waSend(customer, body) {
   if (!waSock || waStatus !== 'connected') throw new Error('WhatsApp chưa kết nối. Vào "Kết nối WhatsApp" quét QR trước.');
   const jid = String(customer).includes('@') ? customer : customer + '@s.whatsapp.net';
   await waSock.sendMessage(jid, { text: body });
+}
+async function waSendImage(customer, buffer, caption) {
+  if (!waSock || waStatus !== 'connected') throw new Error('WhatsApp chưa kết nối. Vào "Kết nối WhatsApp" quét QR trước.');
+  const jid = String(customer).includes('@') ? customer : customer + '@s.whatsapp.net';
+  await waSock.sendMessage(jid, caption ? { image: buffer, caption } : { image: buffer });
 }
 
 // ---------------- AUTO SEED (chỉ tạo tài khoản, không tạo hội thoại giả) ----------------
@@ -176,9 +218,10 @@ autoSeed();
 
 // ---------------- APP ----------------
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));   // đủ chỗ cho ảnh base64
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/media', express.static(MEDIA_DIR));   // ảnh kho + ảnh nhận
 
 const clients = new Set();
 const broadcast = (ev) => { const s = `data: ${JSON.stringify(ev)}\n\n`; for (const r of clients) { try { r.write(s); } catch {} } };
@@ -227,7 +270,7 @@ app.get('/api/conversations', requireAuth, (req, res) => {
     .filter((c) => visibleTo(req.user, c))
     .filter((c) => !channel || c.channel === channel)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
+    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
 });
 app.get('/api/conversations/:id', requireAuth, (req, res) => {
   const c = getConvs()[req.params.id];
@@ -247,15 +290,75 @@ app.post('/api/conversations/:id/send', requireAuth, requirePerm('reply'), async
   broadcast({ type:'message', conversation:conv });
   res.json({ ok: true });
 });
+app.post('/api/conversations/:id/send-image', requireAuth, requirePerm('reply'), async (req, res) => {
+  const c = getConvs()[req.params.id];
+  if (!c) return res.status(404).json({ error: 'Không tìm thấy' });
+  if (!visibleTo(req.user, c)) return res.status(403).json({ error: 'Không có quyền' });
+  const { libraryId, caption } = req.body || {};
+  const it = getLib().find((x) => x.id === libraryId);
+  if (!it) return res.status(404).json({ error: 'Ảnh không tồn tại' });
+  let buffer; try { buffer = fs.readFileSync(path.join(MEDIA_DIR, it.file)); } catch { return res.status(404).json({ error: 'File ảnh đã mất' }); }
+  const capVi = (caption || '').trim();
+  const tr = capVi ? await toCustomer(capVi) : { text: '', translated: false };
+  try { await waSendImage(c.customer, buffer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi ảnh lỗi: ' + e.message }); }
+  const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', img: it.url, orig: tr.text, trans: capVi, translated: tr.translated, ts: Date.now(), by: req.user.username });
+  broadcast({ type:'message', conversation:conv });
+  res.json({ ok: true });
+});
 app.post('/api/conversations/:id/assign', requireAuth, requirePerm('assign'), (req, res) => {
   const all = getConvs(); if (!all[req.params.id]) return res.status(404).json({ error: 'Không tìm thấy' });
   all[req.params.id].assignedTo = req.body?.agent || null; saveConvs(all);
   broadcast({ type:'assigned', conversation: all[req.params.id] });
   res.json({ ok: true });
 });
+app.post('/api/conversations/:id/tags', requireAuth, requirePerm('reply'), (req, res) => {
+  const all = getConvs(); if (!all[req.params.id]) return res.status(404).json({ error: 'Không tìm thấy' });
+  const valid = new Set(getTags().map((t) => t.id));
+  all[req.params.id].tags = (Array.isArray(req.body?.tags) ? req.body.tags : []).filter((x) => valid.has(x));
+  saveConvs(all); broadcast({ type:'tagged', conversation: all[req.params.id] });
+  res.json({ ok: true, tags: all[req.params.id].tags });
+});
 app.post('/api/translate', requireAuth, async (req, res) => {
   const { text, dir } = req.body || {};
   res.json(dir === 'in' ? await toAgent(text) : await toCustomer(text));
+});
+
+// ---------------- Bộ sưu tập ảnh (kho lưu trữ) ----------------
+app.get('/api/library', requireAuth, (req, res) => res.json(getLib()));
+app.post('/api/library', requireAuth, requirePerm('reply'), (req, res) => {
+  const { name, dataUrl } = req.body || {};
+  const mm = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl || '');
+  if (!mm) return res.status(400).json({ error: 'Ảnh không hợp lệ' });
+  const ext = (mm[1].split('/')[1] || 'png').replace('jpeg', 'jpg').replace('+xml', '');
+  const id = rid('lib_'); const file = id + '.' + ext;
+  try { fs.writeFileSync(path.join(MEDIA_DIR, file), Buffer.from(mm[2], 'base64')); }
+  catch (e) { return res.status(500).json({ error: 'Lưu ảnh lỗi' }); }
+  const lib = getLib(); const item = { id, file, url: '/media/' + file, name: (name || 'Ảnh').slice(0, 60), ts: Date.now() };
+  lib.unshift(item); saveLib(lib);
+  res.json(item);
+});
+app.delete('/api/library/:id', requireAuth, requirePerm('reply'), (req, res) => {
+  const lib = getLib(); const it = lib.find((x) => x.id === req.params.id);
+  if (it) { try { fs.rmSync(path.join(MEDIA_DIR, it.file), { force: true }); } catch {} }
+  saveLib(lib.filter((x) => x.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+// ---------------- Thẻ tên màu (tag) ----------------
+app.get('/api/tags', requireAuth, (req, res) => res.json(getTags()));
+app.post('/api/tags', requireAuth, requirePerm('assign'), (req, res) => {
+  const { label, color } = req.body || {};
+  if (!label || !String(label).trim()) return res.status(400).json({ error: 'Thiếu tên thẻ' });
+  const t = getTags();
+  const item = { id: rid('t_'), label: String(label).trim().slice(0, 24), color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#2f6bed' };
+  t.push(item); saveTags(t); res.json(item);
+});
+app.delete('/api/tags/:id', requireAuth, requirePerm('assign'), (req, res) => {
+  saveTags(getTags().filter((x) => x.id !== req.params.id));
+  const all = getConvs(); let ch = false;
+  for (const k in all) { if (Array.isArray(all[k].tags) && all[k].tags.includes(req.params.id)) { all[k].tags = all[k].tags.filter((x) => x !== req.params.id); ch = true; } }
+  if (ch) saveConvs(all);
+  res.json({ ok: true });
 });
 
 // Users / phân quyền
