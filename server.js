@@ -106,7 +106,39 @@ const toCustomerLang = (t, lang) => translate(t, lang || DEFAULT_CUST_LANG);
 // Ngôn ngữ khách có thể chọn cho từng hội thoại
 const CUST_LANGS = [
   { code: 'en', label: 'English' },
-  { code: 'fr', label: 'Français' }
+  { code: 'fr', label: 'Français' },
+  { code: 'es', label: 'Español' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'pt', label: 'Português' },
+  { code: 'nl', label: 'Nederlands' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'zh-CN', label: '中文 (Giản thể)' },
+  { code: 'zh-TW', label: '中文 (Phồn thể)' },
+  { code: 'ja', label: '日本語' },
+  { code: 'ko', label: '한국어' },
+  { code: 'th', label: 'ไทย' },
+  { code: 'id', label: 'Bahasa Indonesia' },
+  { code: 'ms', label: 'Bahasa Melayu' },
+  { code: 'vi', label: 'Tiếng Việt' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'hi', label: 'हिन्दी' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'pl', label: 'Polski' },
+  { code: 'uk', label: 'Українська' },
+  { code: 'fil', label: 'Filipino' },
+  { code: 'km', label: 'ខ្មែរ' },
+  { code: 'lo', label: 'ລາວ' },
+  { code: 'my', label: 'မြန်မာ' },
+  { code: 'fa', label: 'فارسی' },
+  { code: 'he', label: 'עברית' },
+  { code: 'sv', label: 'Svenska' },
+  { code: 'da', label: 'Dansk' },
+  { code: 'fi', label: 'Suomi' },
+  { code: 'cs', label: 'Čeština' },
+  { code: 'el', label: 'Ελληνικά' },
+  { code: 'ro', label: 'Română' },
+  { code: 'hu', label: 'Magyar' }
 ];
 
 // ---------------- WHATSAPP (Baileys / QR) ----------------
@@ -332,8 +364,8 @@ app.post('/api/translate', requireAuth, async (req, res) => {
 app.get('/api/cust-langs', requireAuth, (req, res) => res.json(CUST_LANGS));
 app.post('/api/conversations/:id/lang', requireAuth, requirePerm('reply'), (req, res) => {
   const all = getConvs(); if (!all[req.params.id]) return res.status(404).json({ error: 'Không tìm thấy' });
-  const lang = String(req.body?.lang || '').trim().toLowerCase();
-  if (!/^[a-z]{2}(-[a-z]{2})?$/.test(lang)) return res.status(400).json({ error: 'Mã ngôn ngữ không hợp lệ' });
+  const lang = String(req.body?.lang || '').trim();
+  if (!CUST_LANGS.some((l) => l.code === lang)) return res.status(400).json({ error: 'Mã ngôn ngữ không hợp lệ' });
   all[req.params.id].custLang = lang; saveConvs(all);
   broadcast({ type: 'lang', conversation: all[req.params.id] });
   res.json({ ok: true, custLang: lang });
