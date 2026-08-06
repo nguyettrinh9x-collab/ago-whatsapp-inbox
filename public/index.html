@@ -130,6 +130,7 @@
     <div class="cfg">
       <span class="chip">📥 Anh→Việt</span><span class="chip">📤 Việt→Anh</span>
       <span class="who" id="who"></span>
+      <button class="tbtn" id="waBtn"><span id="waDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e0364f;margin-right:5px;vertical-align:middle"></span>Kết nối WhatsApp</button>
       <button class="tbtn hidden" id="usersBtn">👥 Phân quyền</button>
       <button class="tbtn" id="logout">Đăng xuất</button>
     </div>
@@ -183,7 +184,7 @@ async function boot(){
   document.getElementById('who').textContent=`${me.name} · ${me.role}`;
   if(me.permissions.includes('manage_users')) document.getElementById('usersBtn').classList.remove('hidden');
   if(me.permissions.includes('assign')) agents=await api('/api/agents').catch(()=>[]);
-  await loadNumbers(); await loadConvs(); startStream();
+  await loadNumbers(); await loadConvs(); startStream(); refreshWaDot();
 }
 function show(which){
   document.getElementById('login').classList.toggle('hidden', which!=='login');
@@ -279,10 +280,52 @@ document.getElementById('send').onclick=async()=>{
 function startStream(){
   const es=new EventSource('/api/stream');
   es.onmessage=e=>{ const ev=JSON.parse(e.data);
+    if(ev.type==='wa-status'){ setWaDot(ev.status); if(document.getElementById('wamodal')) renderWA(); return; }
     if(ev.type==='message'&&ev.conversation.id===current) openConv(current);
     loadConvs();
   };
   es.onerror=()=>{ es.close(); setTimeout(startStream,3000); };
+}
+
+// ---- Kết nối WhatsApp (QR) ----
+let waPoll=null;
+function setWaDot(status){
+  const dot=document.getElementById('waDot'); if(!dot) return;
+  dot.style.background = status==='connected' ? '#12b76a' : (status==='qr'||status==='connecting') ? '#f0a24b' : '#e0364f';
+  document.getElementById('waBtn').lastChild.textContent = status==='connected' ? ' WhatsApp: đã nối' : ' Kết nối WhatsApp';
+}
+async function refreshWaDot(){ try{ const s=await api('/api/wa/status'); setWaDot(s.status); }catch{} }
+document.getElementById('waBtn').onclick=openWA;
+async function openWA(){
+  if(!document.getElementById('wamodal')){
+    document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="wamodal"><div class="inner" style="max-width:460px;text-align:center">
+      <span class="x" id="waclose">×</span><h2>Kết nối WhatsApp cá nhân</h2>
+      <div id="waBody" style="padding:8px 0"></div>
+    </div></div>`);
+    document.getElementById('waclose').onclick=()=>{ clearInterval(waPoll); document.getElementById('wamodal').remove(); };
+  }
+  renderWA();
+  clearInterval(waPoll); waPoll=setInterval(renderWA, 2500);
+}
+async function renderWA(){
+  const box=document.getElementById('waBody'); if(!box) return;
+  let s; try{ s=await api('/api/wa/status'); }catch{ return; }
+  setWaDot(s.status);
+  if(s.status==='connected'){
+    clearInterval(waPoll);
+    box.innerHTML=`<p style="color:#12b76a;font-weight:700;font-size:15px">✔ Đã kết nối</p>
+      <p style="color:#666;font-size:13px;margin:6px 0 16px">Số: ${esc((s.me||'').split(':')[0].split('@')[0])}</p>
+      <button class="btn g" id="waLogout">Ngắt kết nối / Đổi số</button>`;
+    document.getElementById('waLogout').onclick=async()=>{ if(!confirm('Ngắt kết nối WhatsApp?'))return; await api('/api/wa/logout',{method:'POST'}); renderWA(); };
+  } else if(s.status==='qr' && s.qr){
+    box.innerHTML=`<p style="font-size:13px;color:#444;margin-bottom:10px">Mở <b>WhatsApp</b> trên điện thoại → <b>Cài đặt → Thiết bị đã liên kết → Liên kết thiết bị</b> → quét mã dưới đây:</p>
+      <img src="${s.qr}" style="width:260px;height:260px" alt="QR"/>
+      <p style="font-size:12px;color:#999;margin-top:8px">Mã tự làm mới. Quét xong sẽ tự vào.</p>`;
+  } else {
+    box.innerHTML=`<p style="font-size:13px;color:#666;margin-bottom:14px">${s.status==='connecting'?'Đang tạo mã QR, chờ chút…':'Chưa kết nối.'}</p>
+      <button class="btn" id="waConnect">Bắt đầu / Tạo mã QR</button>`;
+    const b=document.getElementById('waConnect'); if(b) b.onclick=async()=>{ await api('/api/wa/connect',{method:'POST'}); box.innerHTML='<p style="color:#666">Đang tạo mã QR…</p>'; };
+  }
 }
 
 document.getElementById('usersBtn').onclick=openUsers;
