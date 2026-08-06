@@ -53,6 +53,8 @@
   .badge{background:var(--pk);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex-shrink:0}
   .line-tag{font-size:10px;color:#2559d8;background:#e4edff;border:1px solid #c3d6ff;border-radius:4px;padding:1px 6px;flex-shrink:0}
   .assign-tag{font-size:10.5px;color:#fff;background:#f0a24b;border-radius:4px;padding:1px 6px}
+  .conv-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:5px}
+  .conv-dot{font-size:9.5px;font-weight:700;color:#fff;border-radius:4px;padding:1px 6px;line-height:1.5}
 
   /* Column 2: chat */
   .chat-col{flex:1;display:flex;flex-direction:column;min-width:0;background:#f5f7fb;
@@ -60,11 +62,18 @@
   .chat-head{height:56px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 18px;flex-shrink:0}
   .chat-head .nm{font-weight:700}
   .chat-head .sub{font-size:12px;color:var(--muted)}
+  .tagbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 18px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0}
+  .tagchip{font-size:11.5px;font-weight:600;border-radius:20px;padding:3px 11px;cursor:pointer;border:1.5px solid;background:#fff;user-select:none;transition:.12s}
+  .tagchip.off{opacity:.5}
+  .tagchip.off:hover{opacity:.9}
+  .tag-add{font-size:11.5px;color:var(--muted);border:1.5px dashed #c3ccdd;border-radius:20px;padding:3px 10px;cursor:pointer;background:#fff;user-select:none}
+  .tag-add:hover{color:var(--pk);border-color:var(--pk)}
   .msgs{flex:1;overflow-y:auto;padding:20px 8%;display:flex;flex-direction:column;gap:10px}
   .row{display:flex}.row.in{justify-content:flex-start}.row.out{justify-content:flex-end}
   .bub{max-width:72%;padding:9px 12px 6px;border-radius:14px;font-size:14px;line-height:1.45;box-shadow:0 1px 2px rgba(20,40,90,.08)}
   .row.in .bub{background:var(--recv);border-top-left-radius:4px}
   .row.out .bub{background:var(--sent);border-top-right-radius:4px}
+  .bub img.msgimg{max-width:230px;max-height:280px;border-radius:10px;display:block;margin-bottom:5px;cursor:pointer}
   .tr{margin-top:6px;padding-top:6px;border-top:1px dashed #b9c9e6;font-size:12.5px;color:var(--tr);display:flex;gap:5px}
   .tr .tag{font-size:9.5px;font-weight:800;color:#fff;background:var(--tr);border-radius:4px;padding:1px 5px;height:15px;line-height:13px;flex-shrink:0;margin-top:1px}
   .time{font-size:10px;color:var(--muted);text-align:right;margin-top:3px}
@@ -75,6 +84,8 @@
   .prev{font-size:12.5px;color:var(--tr);background:var(--pk-soft);border:1px solid #d6e2ff;border-radius:9px;padding:8px 11px;margin-bottom:9px;min-height:34px}
   .prev .tag{font-size:9.5px;font-weight:800;color:#fff;background:var(--tr);border-radius:4px;padding:1px 5px;margin-right:6px}
   .crow{display:flex;gap:10px;align-items:flex-end}
+  .imgbtn{background:#eef3ff;color:var(--pk);border:1px solid #d6e2ff;width:46px;height:46px;border-radius:12px;font-size:20px;cursor:pointer;flex-shrink:0}
+  .imgbtn:hover{background:#dfeaff}
   .crow textarea{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:14px;resize:none;height:46px}
   .crow .send{background:var(--pk);color:#fff;border:none;width:46px;height:46px;border-radius:50%;font-size:19px;cursor:pointer}
   .crow .send:hover{background:#2559d8}
@@ -91,8 +102,10 @@
   .info-row .k{color:var(--muted)}
   .info-row .v{font-weight:600;text-align:right}
   .info-sec select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .info-tags{display:flex;flex-wrap:wrap;gap:5px}
+  .info-tags .conv-dot{font-size:10.5px;padding:2px 8px}
 
-  /* Users modal */
+  /* Modals */
   .modal{position:fixed;inset:0;background:rgba(20,30,60,.45);display:flex;align-items:center;justify-content:center;z-index:20}
   .modal .inner{background:#fff;border-radius:14px;width:min(740px,94vw);max-height:88vh;overflow:auto;padding:22px}
   .modal h2{font-size:18px;margin-bottom:12px}
@@ -104,6 +117,17 @@
   .btn{background:var(--pk);color:#fff;border:none;border-radius:8px;padding:8px 13px;cursor:pointer;font-size:13px}
   .btn.g{background:#eef1f6;color:#333}
   .x{float:right;cursor:pointer;font-size:20px;color:#999}
+
+  /* Bộ sưu tập ảnh */
+  .lib-up{display:inline-flex;align-items:center;gap:8px;background:var(--pk);color:#fff;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:13px;font-weight:600}
+  .lib-up:hover{background:#2559d8}
+  .libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:14px;max-height:54vh;overflow:auto}
+  .libcell{border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative;background:#f7f9fc}
+  .libcell img{width:100%;height:110px;object-fit:cover;display:block;cursor:pointer}
+  .libcell .cap{font-size:11px;padding:5px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .libcell .del{position:absolute;top:5px;right:5px;background:rgba(224,54,79,.94);color:#fff;border:none;border-radius:6px;width:23px;height:23px;cursor:pointer;font-size:14px;line-height:1}
+  .libcell .snd{position:absolute;bottom:28px;right:5px;background:var(--pk);color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;font-weight:600}
+
   @media(max-width:1050px){.info-col{display:none}}
   @media(max-width:760px){.list-col{width:100%}.chat-col,.info-col{display:none}}
 </style>
@@ -149,10 +173,12 @@
     <!-- Chat -->
     <div class="chat-col">
       <div class="chat-head" id="chatHead"><span class="nm">Chọn một hội thoại</span></div>
+      <div class="tagbar hidden" id="tagbar"></div>
       <div class="msgs" id="msgs"><div class="empty">👋 Chọn hội thoại bên trái để bắt đầu</div></div>
       <div class="compose disabled" id="compose">
         <div class="prev" id="prev"><span class="tag">EN</span>Bản dịch tiếng Anh khách sẽ nhận…</div>
         <div class="crow">
+          <button class="imgbtn" id="imgBtn" title="Bộ sưu tập ảnh">🖼️</button>
           <textarea id="input" placeholder="Gõ tiếng Việt… (sẽ dịch sang Anh trước khi gửi)"></textarea>
           <button class="send" id="send">➤</button>
         </div>
@@ -168,7 +194,8 @@
 
 <script>
 const api = (p,opt={})=>fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opt}).then(async r=>{if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||r.status);return r.json()});
-let me=null, current=null, convs=[], agents=[], typingTimer=null, currentConv=null;
+let me=null, current=null, convs=[], agents=[], tags=[], typingTimer=null, currentConv=null;
+const tagMap=()=>Object.fromEntries(tags.map(t=>[t.id,t]));
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
@@ -184,6 +211,7 @@ async function boot(){
   document.getElementById('who').textContent=`${me.name} · ${me.role}`;
   if(me.permissions.includes('manage_users')) document.getElementById('usersBtn').classList.remove('hidden');
   if(me.permissions.includes('assign')) agents=await api('/api/agents').catch(()=>[]);
+  tags=await api('/api/tags').catch(()=>[]);
   await loadNumbers(); await loadConvs(); startStream(); refreshWaDot();
 }
 function show(which){
@@ -200,18 +228,27 @@ async function loadNumbers(){
   }catch{}
 }
 
+function previewText(last){
+  if(!last) return '';
+  const body = last.trans||last.orig||(last.img?'📷 Hình ảnh':'');
+  return (last.dir==='in'?'':'Bạn: ')+body;
+}
+
 async function loadConvs(){
   const ch=document.getElementById('lineFilter')?.value||'';
   convs=await api('/api/conversations'+(ch?('?channel='+encodeURIComponent(ch)):''));
   document.getElementById('convCount').textContent=`(${convs.length})`;
+  const tm=tagMap();
   const el=document.getElementById('convList'); el.innerHTML='';
   if(!convs.length){ el.innerHTML='<div class="empty" style="padding:24px">Chưa có hội thoại nào.<br><small>Tin khách nhắn tới sẽ hiện ở đây.</small></div>'; return; }
   for(const c of convs){
-    const last=c.last?(c.last.dir==='in'?c.last.trans||c.last.orig:'Bạn: '+(c.last.trans||c.last.orig)):'';
+    const last=previewText(c.last);
+    const dots=(c.tags||[]).map(id=>tm[id]).filter(Boolean).map(t=>`<span class="conv-dot" style="background:${t.color}">${esc(t.label)}</span>`).join('');
     const d=document.createElement('div'); d.className='conv'+(current===c.id?' active':'');
     d.innerHTML=`<div class="av">${(c.name||'?')[0].toUpperCase()}</div>
       <div class="b"><div class="n"><span class="nm">${esc(c.name)}</span><span style="display:flex;gap:5px;align-items:center">${c.channelLabel?`<span class="line-tag">${esc(c.channelLabel)}</span>`:''}${c.unread?`<span class="badge">${c.unread}</span>`:''}</span></div>
-      <div class="m">${c.assignedTo?`<span class="assign-tag">${esc(c.assignedTo)}</span> `:''}${esc(last).slice(0,46)}</div></div>`;
+      <div class="m">${c.assignedTo?`<span class="assign-tag">${esc(c.assignedTo)}</span> `:''}${esc(last).slice(0,46)}</div>
+      ${dots?`<div class="conv-tags">${dots}</div>`:''}</div>`;
     d.onclick=()=>openConv(c.id);
     el.appendChild(d);
   }
@@ -221,10 +258,38 @@ async function openConv(id){
   current=id;
   const c=await api('/api/conversations/'+id); currentConv=c;
   document.getElementById('chatHead').innerHTML=`<div class="av" style="width:40px;height:40px;font-size:16px">${(c.name||'?')[0].toUpperCase()}</div><div><div class="nm">${esc(c.name)}</div><div class="sub">${c.channelLabel?esc(c.channelLabel)+' · ':''}${esc(c.customer||'')}</div></div>`;
+  renderTagbar(c);
   renderMsgs(c.messages);
   renderInfo(c);
   document.getElementById('compose').classList.toggle('disabled', !me.permissions.includes('reply'));
   loadConvs();
+}
+
+function renderTagbar(conv){
+  const bar=document.getElementById('tagbar'); if(!bar) return;
+  const active=new Set(conv.tags||[]);
+  const canTag=me.permissions.includes('reply');
+  bar.innerHTML = tags.map(t=>{
+    const on=active.has(t.id);
+    const style=on?`background:${t.color};color:#fff;border-color:${t.color}`:`color:${t.color};border-color:${t.color}`;
+    return `<span class="tagchip ${on?'':'off'}" data-tag="${t.id}" style="${style}">${esc(t.label)}</span>`;
+  }).join('') + (me.permissions.includes('assign')?`<span class="tag-add" id="tagAdd">＋ Thẻ mới</span>`:'');
+  bar.classList.remove('hidden');
+  if(canTag) bar.querySelectorAll('[data-tag]').forEach(el=>el.onclick=async()=>{
+    const id=el.dataset.tag; const cur=new Set(currentConv.tags||[]);
+    cur.has(id)?cur.delete(id):cur.add(id);
+    const arr=[...cur];
+    try{ await api('/api/conversations/'+currentConv.id+'/tags',{method:'POST',body:JSON.stringify({tags:arr})});
+      currentConv.tags=arr; renderTagbar(currentConv); renderInfo(currentConv); loadConvs();
+    }catch(ex){ alert(ex.message); }
+  });
+  const add=document.getElementById('tagAdd');
+  if(add) add.onclick=async()=>{
+    const label=prompt('Tên thẻ mới (vd: VIP, Cần gọi lại, Đơn mới):'); if(!label||!label.trim())return;
+    const color=prompt('Màu thẻ — nhập mã hex (vd #e0364f đỏ, #22a06b xanh):','#2f6bed'); if(color===null)return;
+    try{ const t=await api('/api/tags',{method:'POST',body:JSON.stringify({label,color:color||'#2f6bed'})}); tags.push(t); renderTagbar(currentConv); }
+    catch(ex){ alert(ex.message); }
+  };
 }
 
 function renderMsgs(msgs){
@@ -232,7 +297,9 @@ function renderMsgs(msgs){
   for(const m of msgs){
     const row=document.createElement('div'); row.className='row '+(m.dir==='in'?'in':'out');
     const tag=m.dir==='in'?'VI':'GỬI·VI';
-    row.innerHTML=`<div class="bub"><div>${esc(m.orig)}</div>
+    row.innerHTML=`<div class="bub">
+      ${m.img?`<img class="msgimg" src="${esc(m.img)}" onclick="window.open('${esc(m.img)}','_blank')">`:''}
+      ${m.orig?`<div>${esc(m.orig)}</div>`:''}
       ${m.trans?`<div class="tr"><span class="tag">${tag}</span><span>${esc(m.trans)}</span></div>`:''}
       <div class="time">${fmt(m.ts)}${m.dir==='out'?' ✓✓':''}</div></div>`;
     box.appendChild(row);
@@ -242,6 +309,8 @@ function renderMsgs(msgs){
 
 function renderInfo(c){
   const col=document.getElementById('infoCol');
+  const tm=tagMap();
+  const chips=(c.tags||[]).map(id=>tm[id]).filter(Boolean).map(t=>`<span class="conv-dot" style="background:${t.color}">${esc(t.label)}</span>`).join('');
   let assignHtml='';
   if(me.permissions.includes('assign')){
     assignHtml=`<div class="info-sec"><h4>Gán cho sale</h4>
@@ -251,6 +320,7 @@ function renderInfo(c){
   }
   col.innerHTML=`
     <div class="info-top"><div class="bigav">${(c.name||'?')[0].toUpperCase()}</div><div class="iname">${esc(c.name)}</div></div>
+    <div class="info-sec"><h4>Thẻ</h4><div class="info-tags">${chips||'<span style="color:#aab;font-size:12.5px">Chưa gắn thẻ</span>'}</div></div>
     <div class="info-sec"><h4>Thông tin</h4>
       <div class="info-row"><span class="k">Số WhatsApp</span><span class="v">${esc(c.customer||'—')}</span></div>
       <div class="info-row"><span class="k">Line</span><span class="v">${esc(c.channelLabel||'—')}</span></div>
@@ -277,10 +347,52 @@ document.getElementById('send').onclick=async()=>{
   }catch(ex){ alert('Gửi lỗi: '+ex.message); }
 };
 
+// ---- Bộ sưu tập ảnh ----
+document.getElementById('imgBtn').onclick=openLibrary;
+async function openLibrary(){
+  let lib=[]; try{ lib=await api('/api/library'); }catch{}
+  if(document.getElementById('libmodal')) document.getElementById('libmodal').remove();
+  const cells=lib.map(it=>`<div class="libcell">
+    <button class="del" data-del="${it.id}" title="Xóa">×</button>
+    ${current?`<button class="snd" data-send="${it.id}">Gửi</button>`:''}
+    <img src="${esc(it.url)}" ${current?`data-send="${it.id}"`:''}>
+    <div class="cap" title="${esc(it.name)}">${esc(it.name)}</div></div>`).join('');
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="libmodal"><div class="inner" style="max-width:680px">
+    <span class="x" id="libclose">×</span><h2>🖼️ Bộ sưu tập ảnh</h2>
+    <p style="font-size:12.5px;color:#888;margin-bottom:10px">Kho ảnh dùng lại nhiều lần (bảng giá, feedback, hướng dẫn dùng…). ${current?'Bấm <b>Gửi</b> trên ảnh để gửi vào hội thoại đang mở.':'Mở một hội thoại trước để gửi ảnh.'}</p>
+    <label class="lib-up">⬆️ Tải ảnh lên<input type="file" id="libFile" accept="image/*" multiple hidden></label>
+    <div class="libgrid" id="libgrid">${cells||'<p style="color:#999;padding:20px">Chưa có ảnh nào. Bấm “Tải ảnh lên”.</p>'}</div>
+  </div></div>`);
+  document.getElementById('libclose').onclick=()=>document.getElementById('libmodal').remove();
+  document.getElementById('libFile').onchange=async(e)=>{
+    const files=[...e.target.files];
+    for(const f of files){
+      if(f.size>8*1024*1024){ alert('Ảnh "'+f.name+'" quá lớn (>8MB), bỏ qua.'); continue; }
+      const dataUrl=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+      try{ await api('/api/library',{method:'POST',body:JSON.stringify({name:f.name,dataUrl})}); }catch(ex){ alert('Tải "'+f.name+'" lỗi: '+ex.message); }
+    }
+    openLibrary();
+  };
+  document.querySelectorAll('#libgrid [data-send]').forEach(el=>el.onclick=async()=>{
+    if(!current){ alert('Hãy mở một hội thoại trước.'); return; }
+    const id=el.dataset.send;
+    const caption=prompt('Chú thích gửi kèm (tiếng Việt — tự dịch sang Anh; để trống nếu chỉ gửi ảnh):','');
+    if(caption===null) return;
+    try{ await api('/api/conversations/'+current+'/send-image',{method:'POST',body:JSON.stringify({libraryId:id,caption})});
+      document.getElementById('libmodal').remove(); openConv(current);
+    }catch(ex){ alert('Gửi ảnh lỗi: '+ex.message); }
+  });
+  document.querySelectorAll('#libgrid [data-del]').forEach(el=>el.onclick=async(ev)=>{
+    ev.stopPropagation(); if(!confirm('Xóa ảnh này khỏi bộ sưu tập?'))return;
+    try{ await api('/api/library/'+el.dataset.del,{method:'DELETE'}); openLibrary(); }catch(ex){ alert(ex.message); }
+  });
+}
+
 function startStream(){
   const es=new EventSource('/api/stream');
   es.onmessage=e=>{ const ev=JSON.parse(e.data);
     if(ev.type==='wa-status'){ setWaDot(ev.status); if(document.getElementById('wamodal')) renderWA(); return; }
+    if(ev.type==='tagged'){ if(currentConv&&ev.conversation.id===current){ currentConv.tags=ev.conversation.tags; renderTagbar(currentConv); renderInfo(currentConv); } loadConvs(); return; }
     if(ev.type==='message'&&ev.conversation.id===current) openConv(current);
     loadConvs();
   };
