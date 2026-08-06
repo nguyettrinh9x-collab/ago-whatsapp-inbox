@@ -61,7 +61,7 @@ const saveTags = (x) => writeJSON(TAGS_FILE, x);
 function upsertMessage(channel, channelLabel, customer, name, m) {
   const all = getConvs();
   const key = convKey(channel, customer);
-  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, tags: [], unread: 0, updatedAt: 0, messages: [] };
+  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, tags: [], custLang: DEFAULT_CUST_LANG, unread: 0, updatedAt: 0, messages: [] };
   if (name) all[key].name = name;
   if (channelLabel) all[key].channelLabel = channelLabel;
   if (!Array.isArray(all[key].tags)) all[key].tags = [];
@@ -99,8 +99,15 @@ async function translate(text, target) {
     return t ? { text: t, translated: true } : { text, translated: false };
   } catch (e) { console.error('[translate]', e.message); return { text, translated: false }; }
 }
+const DEFAULT_CUST_LANG = process.env.CUSTOMER_LANG || 'en';
 const toAgent = (t) => translate(t, process.env.AGENT_LANG || 'vi');
-const toCustomer = (t) => translate(t, process.env.CUSTOMER_LANG || 'en');
+const toCustomer = (t) => translate(t, DEFAULT_CUST_LANG);
+const toCustomerLang = (t, lang) => translate(t, lang || DEFAULT_CUST_LANG);
+// Ngôn ngữ khách có thể chọn cho từng hội thoại
+const CUST_LANGS = [
+  { code: 'en', label: 'English' },
+  { code: 'fr', label: 'Français' }
+];
 
 // ---------------- WHATSAPP (Baileys / QR) ----------------
 let waSock = null;
@@ -270,7 +277,7 @@ app.get('/api/conversations', requireAuth, (req, res) => {
     .filter((c) => visibleTo(req.user, c))
     .filter((c) => !channel || c.channel === channel)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
+    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], custLang:c.custLang||DEFAULT_CUST_LANG, unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
 });
 app.get('/api/conversations/:id', requireAuth, (req, res) => {
   const c = getConvs()[req.params.id];
@@ -284,7 +291,7 @@ app.post('/api/conversations/:id/send', requireAuth, requirePerm('reply'), async
   if (!c) return res.status(404).json({ error: 'Không tìm thấy' });
   if (!visibleTo(req.user, c)) return res.status(403).json({ error: 'Không có quyền' });
   const vi = (req.body?.text || '').trim(); if (!vi) return res.status(400).json({ error: 'Trống' });
-  const tr = await toCustomer(vi);
+  const tr = await toCustomerLang(vi, c.custLang);
   try { await waSend(c.customer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi WhatsApp lỗi: ' + e.message }); }
   const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', orig:tr.text, trans:vi, translated:tr.translated, ts:Date.now(), by:req.user.username });
   broadcast({ type:'message', conversation:conv });
@@ -299,7 +306,7 @@ app.post('/api/conversations/:id/send-image', requireAuth, requirePerm('reply'),
   if (!it) return res.status(404).json({ error: 'Ảnh không tồn tại' });
   let buffer; try { buffer = fs.readFileSync(path.join(MEDIA_DIR, it.file)); } catch { return res.status(404).json({ error: 'File ảnh đã mất' }); }
   const capVi = (caption || '').trim();
-  const tr = capVi ? await toCustomer(capVi) : { text: '', translated: false };
+  const tr = capVi ? await toCustomerLang(capVi, c.custLang) : { text: '', translated: false };
   try { await waSendImage(c.customer, buffer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi ảnh lỗi: ' + e.message }); }
   const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', img: it.url, orig: tr.text, trans: capVi, translated: tr.translated, ts: Date.now(), by: req.user.username });
   broadcast({ type:'message', conversation:conv });
@@ -319,8 +326,17 @@ app.post('/api/conversations/:id/tags', requireAuth, requirePerm('reply'), (req,
   res.json({ ok: true, tags: all[req.params.id].tags });
 });
 app.post('/api/translate', requireAuth, async (req, res) => {
-  const { text, dir } = req.body || {};
-  res.json(dir === 'in' ? await toAgent(text) : await toCustomer(text));
+  const { text, dir, target } = req.body || {};
+  res.json(dir === 'in' ? await toAgent(text) : await toCustomerLang(text, target));
+});
+app.get('/api/cust-langs', requireAuth, (req, res) => res.json(CUST_LANGS));
+app.post('/api/conversations/:id/lang', requireAuth, requirePerm('reply'), (req, res) => {
+  const all = getConvs(); if (!all[req.params.id]) return res.status(404).json({ error: 'Không tìm thấy' });
+  const lang = String(req.body?.lang || '').trim().toLowerCase();
+  if (!/^[a-z]{2}(-[a-z]{2})?$/.test(lang)) return res.status(400).json({ error: 'Mã ngôn ngữ không hợp lệ' });
+  all[req.params.id].custLang = lang; saveConvs(all);
+  broadcast({ type: 'lang', conversation: all[req.params.id] });
+  res.json({ ok: true, custLang: lang });
 });
 
 // ---------------- Bộ sưu tập ảnh (kho lưu trữ) ----------------
