@@ -1,14 +1,17 @@
 {
   "name": "ago-whatsapp-inbox",
-  "version": "1.0.0",
-  "description": "AGO WhatsApp Team Inbox — nhận/gửi WhatsApp + tự dịch Anh<->Việt + phân quyền team.",
+  "version": "2.0.0",
+  "description": "AGO WhatsApp Team Inbox — kết nối WhatsApp cá nhân qua QR (Baileys) + tự dịch Anh<->Việt + phân quyền team.",
   "main": "server.js",
   "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=20" },
   "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4"
   }
 }
