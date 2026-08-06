@@ -1,36 +1,30 @@
-// AGO WhatsApp Team Inbox — bản gộp 1 file, HỖ TRỢ NHIỀU SỐ (multi-line).
-// Nhận/gửi WhatsApp Cloud API + tự dịch Anh<->Việt + đăng nhập & phân quyền + nhiều số WhatsApp.
-try { require('dotenv').config(); } catch {} // .env chỉ dùng khi chạy local; trên Render lấy từ Environment
+// AGO WhatsApp Team Inbox — kết nối WhatsApp CÁ NHÂN qua QR (Baileys).
+// Nhận/gửi WhatsApp + tự dịch Anh<->Việt + đăng nhập & phân quyền team.
+// LƯU Ý: dùng thư viện không chính thức (WhatsApp Web). Cần server chạy 24/7 + ổ đĩa bền.
+try { require('dotenv').config(); } catch {}
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const QRCode = require('qrcode');
+const pino = require('pino');
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion
+} = require('@whiskeysockets/baileys');
 
 const SECRET = process.env.JWT_SECRET || 'dev-secret-doi-di';
-const VERSION = process.env.GRAPH_API_VERSION || 'v21.0';
 const TKEY = process.env.GOOGLE_TRANSLATE_API_KEY;
-
-// ---------------- CẤU HÌNH NHIỀU SỐ ----------------
-// WHATSAPP_NUMBERS = JSON, vd: [{"id":"1234","label":"US Line","token":"EAAG..."},{"id":"5678","label":"CA Line"}]
-// Nếu 1 số không có token riêng -> dùng WHATSAPP_TOKEN chung.
-// Tương thích ngược: nếu chỉ đặt WHATSAPP_PHONE_NUMBER_ID thì coi như 1 số.
-function getNumbers() {
-  try {
-    const arr = JSON.parse(process.env.WHATSAPP_NUMBERS || '[]');
-    if (Array.isArray(arr) && arr.length) return arr;
-  } catch (e) { console.error('[WHATSAPP_NUMBERS] JSON lỗi:', e.message); }
-  if (process.env.WHATSAPP_PHONE_NUMBER_ID)
-    return [{ id: process.env.WHATSAPP_PHONE_NUMBER_ID, label: 'Line 1', token: process.env.WHATSAPP_TOKEN }];
-  return [];
-}
-const numberById = (id) => getNumbers().find((n) => String(n.id) === String(id));
-const labelFor = (id) => { const n = numberById(id); return n ? (n.label || n.id) : String(id); };
-const tokenFor = (id) => { const n = numberById(id); return (n && n.token) || process.env.WHATSAPP_TOKEN; };
+const CHANNEL = 'wa';                       // 1 số cá nhân => 1 line
+const CHANNEL_LABEL = 'WhatsApp cá nhân';
 
 // ---------------- STORE (JSON file) ----------------
 const DATA_DIR = path.join(__dirname, 'data');
+const AUTH_DIR = path.join(DATA_DIR, 'wa-auth');   // phiên đăng nhập WhatsApp
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const CONV_FILE = path.join(DATA_DIR, 'conversations.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -41,7 +35,7 @@ const saveUsers = (u) => writeJSON(USERS_FILE, u);
 const findUser = (n) => getUsers().find((u) => u.username.toLowerCase() === String(n).toLowerCase());
 const getConvs = () => readJSON(CONV_FILE, {});
 const saveConvs = (c) => writeJSON(CONV_FILE, c);
-const convKey = (channel, customer) => channel + '|' + customer; // tách hội thoại theo (số nhận | khách)
+const convKey = (channel, customer) => channel + '|' + customer;
 
 function upsertMessage(channel, channelLabel, customer, name, m) {
   const all = getConvs();
@@ -86,35 +80,89 @@ async function translate(text, target) {
 const toAgent = (t) => translate(t, process.env.AGENT_LANG || 'vi');
 const toCustomer = (t) => translate(t, process.env.CUSTOMER_LANG || 'en');
 
-// ---------------- WHATSAPP ----------------
-async function waSend(phoneNumberId, to, body) {
-  const token = tokenFor(phoneNumberId);
-  if (!token || !phoneNumberId) throw new Error('Chưa cấu hình token / số WhatsApp cho line này');
-  const r = await fetch(`https://graph.facebook.com/${VERSION}/${phoneNumberId}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } })
-  });
-  const d = await r.json();
-  if (!r.ok) throw new Error('WhatsApp API: ' + JSON.stringify(d));
-  return d;
-}
-// Rút tin đến + biết số nào (phone_number_id) nhận
-function waParse(payload) {
-  const out = [];
-  for (const e of payload?.entry || [])
-    for (const ch of e.changes || []) {
-      const v = ch.value || {}, nameBy = {};
-      const phoneNumberId = v.metadata?.phone_number_id || 'unknown';
-      for (const c of v.contacts || []) nameBy[c.wa_id] = c.profile?.name || c.wa_id;
-      for (const m of v.messages || []) {
-        if (m.type !== 'text') continue;
-        out.push({ phoneNumberId, from: m.from, name: nameBy[m.from] || m.from, text: m.text?.body || '', ts: Number(m.timestamp) * 1000 || Date.now() });
+// ---------------- WHATSAPP (Baileys / QR) ----------------
+let waSock = null;
+let waStatus = 'disconnected';   // disconnected | qr | connecting | connected
+let waQR = null;                 // data-URL của mã QR
+let waMe = null;                 // số của mình khi đã kết nối
+let waStarting = false;
+const waLog = pino({ level: 'silent' });
+
+const tsToMs = (t) => {
+  if (!t) return Date.now();
+  if (typeof t === 'number') return t * 1000;
+  if (typeof t.toNumber === 'function') return t.toNumber() * 1000;
+  return Number(t) * 1000 || Date.now();
+};
+
+async function startWA() {
+  if (waStarting) return;
+  waStarting = true;
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { version } = await fetchLatestBaileysVersion();
+    waStatus = 'connecting'; broadcast({ type: 'wa-status', status: waStatus });
+    waSock = makeWASocket({
+      version, auth: state, logger: waLog, printQRInTerminal: false,
+      browser: ['AGO Inbox', 'Chrome', '1.0'], syncFullHistory: false
+    });
+    waSock.ev.on('creds.update', saveCreds);
+
+    waSock.ev.on('connection.update', async (u) => {
+      const { connection, lastDisconnect, qr } = u;
+      if (qr) {
+        try { waQR = await QRCode.toDataURL(qr); } catch { waQR = null; }
+        waStatus = 'qr'; broadcast({ type: 'wa-status', status: waStatus });
       }
-    }
-  return out;
+      if (connection === 'open') {
+        waStatus = 'connected'; waQR = null; waMe = waSock.user?.id || null;
+        broadcast({ type: 'wa-status', status: waStatus, me: waMe });
+        console.log('✔ WhatsApp connected:', waMe);
+      }
+      if (connection === 'close') {
+        waStatus = 'disconnected'; waStarting = false;
+        const code = lastDisconnect?.error?.output?.statusCode;
+        broadcast({ type: 'wa-status', status: waStatus });
+        if (code === DisconnectReason.loggedOut) {
+          try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
+          waQR = null; console.log('WhatsApp đã logout, xoá phiên.');
+        } else {
+          console.log('WhatsApp rớt, thử kết nối lại…');
+          setTimeout(() => startWA().catch(() => {}), 3000);
+        }
+      }
+    });
+
+    waSock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+      for (const m of messages) {
+        try {
+          if (!m.message || m.key.fromMe) continue;
+          const jid = m.key.remoteJid || '';
+          if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue; // bỏ nhóm & status
+          const text = m.message.conversation || m.message.extendedTextMessage?.text;
+          if (!text) continue;
+          const phone = jid.split('@')[0];
+          const name = m.pushName || phone;
+          const tr = await toAgent(text);
+          const c = upsertMessage(CHANNEL, CHANNEL_LABEL, phone, name, { dir:'in', orig:text, trans:tr.text, translated:tr.translated, ts:tsToMs(m.messageTimestamp), by:null });
+          broadcast({ type:'message', conversation:c });
+        } catch (e) { console.error('[incoming]', e.message); }
+      }
+    });
+  } catch (e) {
+    console.error('[startWA]', e.message); waStarting = false; waStatus = 'disconnected';
+    setTimeout(() => startWA().catch(() => {}), 5000);
+  }
 }
 
-// ---------------- AUTO SEED (demo: 2 line) ----------------
+async function waSend(customer, body) {
+  if (!waSock || waStatus !== 'connected') throw new Error('WhatsApp chưa kết nối. Vào "Kết nối WhatsApp" quét QR trước.');
+  const jid = String(customer).includes('@') ? customer : customer + '@s.whatsapp.net';
+  await waSock.sendMessage(jid, { text: body });
+}
+
+// ---------------- AUTO SEED (chỉ tạo tài khoản, không tạo hội thoại giả) ----------------
 function autoSeed() {
   if (getUsers().length) return;
   saveUsers([
@@ -122,18 +170,7 @@ function autoSeed() {
     { username:'linh',  name:'Linh (Sale)',    role:'agent',  passwordHash:hashPw('demo123'), permissions:[] },
     { username:'trang', name:'Trang (Leader)', role:'leader', passwordHash:hashPw('demo123'), permissions:[] }
   ]);
-  saveConvs({
-    "DEMOUS|14155550001":{id:"DEMOUS|14155550001",channel:"DEMOUS",channelLabel:"US Line",customer:"14155550001",name:"Sarah M.",assignedTo:"linh",unread:1,updatedAt:1785900300000,messages:[
-      {dir:"in",orig:"Hi! I saw your ad about fibroids and fertility.",trans:"Chào! Tôi thấy quảng cáo của bạn về u xơ tử cung và khả năng sinh sản.",translated:true,ts:1785900000000,by:null},
-      {dir:"in",orig:"Is this safe if I have fibroids? I'm trying to conceive.",trans:"Sản phẩm này có an toàn nếu tôi bị u xơ không? Tôi đang muốn có con.",translated:true,ts:1785900100000,by:null},
-      {dir:"out",orig:"Hi Sarah! Thanks for reaching out. AGO MOM is formulated to support reproductive wellness. May I ask a few questions to advise you better?",trans:"Chào Sarah! Cảm ơn bạn đã nhắn. AGO MOM được bào chế để hỗ trợ sức khỏe sinh sản. Cho mình hỏi vài câu để tư vấn kỹ hơn nhé?",translated:true,ts:1785900200000,by:"linh"},
-      {dir:"in",orig:"Yes please. What is the price and do you ship to the US?",trans:"Vâng. Giá bao nhiêu và bạn có ship về Mỹ không?",translated:true,ts:1785900300000,by:null}
-    ]},
-    "DEMOCA|14085552222":{id:"DEMOCA|14085552222",channel:"DEMOCA",channelLabel:"CA Line",customer:"14085552222",name:"Jenny L.",assignedTo:null,unread:1,updatedAt:1785899000000,messages:[
-      {dir:"in",orig:"How long until I see results?",trans:"Bao lâu thì tôi thấy hiệu quả?",translated:true,ts:1785899000000,by:null}
-    ]}
-  });
-  console.log('✔ Seeded demo (2 line): admin/demo123 · linh/demo123 · trang/demo123');
+  console.log('✔ Seeded users: admin/demo123 · linh/demo123 · trang/demo123');
 }
 autoSeed();
 
@@ -149,24 +186,6 @@ const curUser = (req) => { const p = verifyToken(req.cookies?.token || ''); retu
 const requireAuth = (req, res, next) => { const u = curUser(req); if (!u) return res.status(401).json({ error: 'Chưa đăng nhập' }); req.user = u; next(); };
 const requirePerm = (p) => (req, res, next) => can(req.user, p) ? next() : res.status(403).json({ error: 'Không có quyền: ' + p });
 
-// Webhook (dùng chung cho MỌI số của cùng 1 WABA; route theo phone_number_id)
-app.get('/webhook', (req, res) => {
-  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === process.env.WHATSAPP_VERIFY_TOKEN)
-    return res.status(200).send(req.query['hub.challenge']);
-  res.sendStatus(403);
-});
-app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
-  try {
-    for (const msg of waParse(req.body)) {
-      const label = labelFor(msg.phoneNumberId);
-      const tr = await toAgent(msg.text);
-      const c = upsertMessage(msg.phoneNumberId, label, msg.from, msg.name, { dir:'in', orig:msg.text, trans:tr.text, translated:tr.translated, ts:msg.ts, by:null });
-      broadcast({ type:'message', conversation:c });
-    }
-  } catch (e) { console.error('[webhook]', e.message); }
-});
-
 // Auth
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -178,18 +197,32 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => { res.clearCookie('token'); res.json({ ok: true }); });
 app.get('/api/me', requireAuth, (req, res) => res.json({ username: req.user.username, name: req.user.name || req.user.username, role: req.user.role, permissions: effPerms(req.user) }));
 
-// Danh sách các line (số) — không lộ token
+// --- WhatsApp kết nối ---
+app.get('/api/wa/status', requireAuth, (req, res) => res.json({ status: waStatus, qr: waQR, me: waMe }));
+app.post('/api/wa/connect', requireAuth, requirePerm('manage_users'), (req, res) => {
+  if (waStatus === 'connected') return res.json({ ok: true, status: waStatus });
+  startWA().catch(() => {});
+  res.json({ ok: true, status: waStatus });
+});
+app.Aost('/api/wa/logout', requireAuth, requirePerm('manage_users'), async (req, res) => {
+  try { if (waSock) await waSock.logout(); } catch {}
+  try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
+  waSock = null; waStatus = 'disconnected'; waQR = null; waMe = null; waStarting = false;
+  broadcast({ type: 'wa-status', status: waStatus });
+  res.json({ ok: true });
+});
+
+// Danh sách các line (số)
 app.get('/api/numbers', requireAuth, (req, res) => {
-  const cfg = getNumbers().map((n) => ({ id: String(n.id), label: n.label || String(n.id) }));
-  // gộp thêm các line xuất hiện trong dữ liệu (vd demo) để filter luôn có
-  const seen = new Set(cfg.map((n) => n.id));
+  const seen = new Set(); const cfg = [];
   for (const c of Object.values(getConvs())) if (c.channel && !seen.has(c.channel)) { seen.add(c.channel); cfg.push({ id: c.channel, label: c.channelLabel || c.channel }); }
+  if (!cfg.length) cfg.push({ id: CHANNEL, label: CHANNEL_LABEL });
   res.json(cfg);
 });
 
 // Conversations
 app.get('/api/conversations', requireAuth, (req, res) => {
-  const channel = req.query.channel; // lọc theo line (tùy chọn)
+  const channel = req.query.channel;
   res.json(Object.values(getConvs())
     .filter((c) => visibleTo(req.user, c))
     .filter((c) => !channel || c.channel === channel)
@@ -209,7 +242,7 @@ app.post('/api/conversations/:id/send', requireAuth, requirePerm('reply'), async
   if (!visibleTo(req.user, c)) return res.status(403).json({ error: 'Không có quyền' });
   const vi = (req.body?.text || '').trim(); if (!vi) return res.status(400).json({ error: 'Trống' });
   const tr = await toCustomer(vi);
-  try { await waSend(c.channel, c.customer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi WhatsApp lỗi: ' + e.message }); }
+  try { await waSend(c.customer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi WhatsApp lỗi: ' + e.message }); }
   const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', orig:tr.text, trans:vi, translated:tr.translated, ts:Date.now(), by:req.user.username });
   broadcast({ type:'message', conversation:conv });
   res.json({ ok: true });
@@ -255,4 +288,7 @@ app.get('/api/stream', requireAuth, (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('AGO WhatsApp Inbox (multi-line): http://localhost:' + PORT));
+app.listen(PORT, () => {
+  console.log('AGO WhatsApp Inbox (QR/Baileys): http://localhost:' + PORT);
+  startWA().catch((e) => console.error('startWA:', e.message));   // tự kết nối lại nếu đã có phiên
+});
