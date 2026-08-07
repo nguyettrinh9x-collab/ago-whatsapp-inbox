@@ -226,6 +226,25 @@ async function startWA() {
         } catch (e) { console.error('[incoming]', e.message); }
       }
     });
+
+    // Trạng thái tin đã gửi: 1 Đã gửi · 2 Đã nhận · 3/4 Đã xem
+    waSock.ev.on('messages.update', (updates) => {
+      try {
+        const all = getConvs(); let changed = false;
+        for (const u of updates) {
+          const id = u.key?.id; let st = u.update?.status;
+          if (!id || st == null) continue;
+          if (typeof st === 'string') st = ({ PENDING:0, SERVER_ACK:1, DELIVERY_ACK:2, READ:3, PLAYED:4 })[st] ?? null;
+          if (st == null) continue;
+          for (const k in all) {
+            for (const m of (all[k].messages || [])) {
+              if (m.waId === id && (m.status || 0) < st) { m.status = st; changed = true; broadcast({ type:'status', convId:k, waId:id, status:st }); }
+            }
+          }
+        }
+        if (changed) saveConvs(all);
+      } catch (e) { console.error('[msg-update]', e.message); }
+    });
   } catch (e) {
     console.error('[startWA]', e.message); waStarting = false; waStatus = 'disconnected';
     setTimeout(() => startWA().catch(() => {}), 5000);
@@ -235,12 +254,12 @@ async function startWA() {
 async function waSend(customer, body) {
   if (!waSock || waStatus !== 'connected') throw new Error('WhatsApp chưa kết nối. Vào "Kết nối WhatsApp" quét QR trước.');
   const jid = String(customer).includes('@') ? customer : customer + '@s.whatsapp.net';
-  await waSock.sendMessage(jid, { text: body });
+  return await waSock.sendMessage(jid, { text: body });
 }
 async function waSendImage(customer, buffer, caption) {
   if (!waSock || waStatus !== 'connected') throw new Error('WhatsApp chưa kết nối. Vào "Kết nối WhatsApp" quét QR trước.');
   const jid = String(customer).includes('@') ? customer : customer + '@s.whatsapp.net';
-  await waSock.sendMessage(jid, caption ? { image: buffer, caption } : { image: buffer });
+  return await waSock.sendMessage(jid, caption ? { image: buffer, caption } : { image: buffer });
 }
 
 // ---------------- AUTO SEED (chỉ tạo tài khoản, không tạo hội thoại giả) ----------------
@@ -324,8 +343,8 @@ app.post('/api/conversations/:id/send', requireAuth, requirePerm('reply'), async
   if (!visibleTo(req.user, c)) return res.status(403).json({ error: 'Không có quyền' });
   const vi = (req.body?.text || '').trim(); if (!vi) return res.status(400).json({ error: 'Trống' });
   const tr = await toCustomerLang(vi, c.custLang);
-  try { await waSend(c.customer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi WhatsApp lỗi: ' + e.message }); }
-  const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', orig:tr.text, trans:vi, translated:tr.translated, ts:Date.now(), by:req.user.username });
+  let sent; try { sent = await waSend(c.customer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi WhatsApp lỗi: ' + e.message }); }
+  const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', orig:tr.text, trans:vi, translated:tr.translated, ts:Date.now(), by:req.user.username, waId: sent?.key?.id || null, status: 1 });
   broadcast({ type:'message', conversation:conv });
   res.json({ ok: true });
 });
@@ -339,8 +358,8 @@ app.post('/api/conversations/:id/send-image', requireAuth, requirePerm('reply'),
   let buffer; try { buffer = fs.readFileSync(path.join(MEDIA_DIR, it.file)); } catch { return res.status(404).json({ error: 'File ảnh đã mất' }); }
   const capVi = (caption || '').trim();
   const tr = capVi ? await toCustomerLang(capVi, c.custLang) : { text: '', translated: false };
-  try { await waSendImage(c.customer, buffer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi ảnh lỗi: ' + e.message }); }
-  const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', img: it.url, orig: tr.text, trans: capVi, translated: tr.translated, ts: Date.now(), by: req.user.username });
+  let sent; try { sent = await waSendImage(c.customer, buffer, tr.text); } catch (e) { return res.status(502).json({ error: 'Gửi ảnh lỗi: ' + e.message }); }
+  const conv = upsertMessage(c.channel, c.channelLabel, c.customer, c.name, { dir:'out', img: it.url, orig: tr.text, trans: capVi, translated: tr.translated, ts: Date.now(), by: req.user.username, waId: sent?.key?.id || null, status: 1 });
   broadcast({ type:'message', conversation:conv });
   res.json({ ok: true });
 });
@@ -465,10 +484,11 @@ app.get('/api/stats', requireAuth, (req, res) => {
   const userName = {}; getUsers().forEach((u) => { userName[u.username] = u.name || u.username; });
   const tagLabel = {}; getTags().forEach((t) => { tagLabel[t.id] = t.label; });
   let totalMsgs = 0, won = 0, revenue = 0, today = 0, d7 = 0, d30 = 0;
-  const bySale = {}, byLine = {}, byTag = {};
+  const bySale = {}, byLine = {}, byTag = {}, byStatus = {};
   for (const c of convs) {
     const msgs = c.messages || [];
     totalMsgs += msgs.length;
+    byStatus[c.status || 'new'] = (byStatus[c.status || 'new'] || 0) + 1;
     if (c.status === 'won') { won++; revenue += Number(c.dealValue) || 0; }
     const line = c.channelLabel || c.channel || '—';
     byLine[line] = (byLine[line] || 0) + 1;
@@ -481,6 +501,7 @@ app.get('/api/stats', requireAuth, (req, res) => {
   res.json({
     totals: { convs: convs.length, msgs: totalMsgs, won, revenue, rate: convs.length ? Math.round(won / convs.length * 100) : 0 },
     time: { today, d7, d30 },
+    byStatus: CRM_STATUS.map((s) => ({ code: s.code, label: s.label, color: s.color, count: byStatus[s.code] || 0 })),
     bySale: Object.entries(bySale).map(([k, v]) => ({ name: k, convs: v.convs, msgs: v.msgs, won: v.won })).sort((a, b) => b.convs - a.convs),
     byLine: Object.entries(byLine).map(([k, v]) => ({ label: k, count: v })).sort((a, b) => b.count - a.count),
     byTag: Object.entries(byTag).map(([k, v]) => ({ label: k, count: v })).sort((a, b) => b.count - a.count)
