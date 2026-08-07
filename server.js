@@ -61,7 +61,7 @@ const saveTags = (x) => writeJSON(TAGS_FILE, x);
 function upsertMessage(channel, channelLabel, customer, name, m) {
   const all = getConvs();
   const key = convKey(channel, customer);
-  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, tags: [], custLang: DEFAULT_CUST_LANG, unread: 0, updatedAt: 0, messages: [] };
+  if (!all[key]) all[key] = { id: key, channel, channelLabel, customer, name: name || customer, assignedTo: null, tags: [], custLang: DEFAULT_CUST_LANG, status: 'new', note: '', email: '', product: '', dealValue: 0, unread: 0, updatedAt: 0, messages: [] };
   if (name) all[key].name = name;
   if (channelLabel) all[key].channelLabel = channelLabel;
   if (!Array.isArray(all[key].tags)) all[key].tags = [];
@@ -309,7 +309,7 @@ app.get('/api/conversations', requireAuth, (req, res) => {
     .filter((c) => visibleTo(req.user, c))
     .filter((c) => !channel || c.channel === channel)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], custLang:c.custLang||DEFAULT_CUST_LANG, unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
+    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channel:c.channel, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], custLang:c.custLang||DEFAULT_CUST_LANG, status:c.status||'new', unread:c.unread, updatedAt:c.updatedAt, last:c.messages[c.messages.length-1]||null })));
 });
 app.get('/api/conversations/:id', requireAuth, (req, res) => {
   const c = getConvs()[req.params.id];
@@ -430,6 +430,61 @@ app.put('/api/users/:username/permissions', requireAuth, requirePerm('manage_use
 });
 app.delete('/api/users/:username', requireAuth, requirePerm('manage_users'), (req, res) => {
   saveUsers(getUsers().filter((u) => u.username !== req.params.username)); res.json({ ok: true });
+});
+
+// ---------------- CRM + THỐNG KÊ ----------------
+const CRM_STATUS = [
+  { code: 'new',    label: 'Mới',        color: '#8a94a6' },
+  { code: 'caring', label: 'Đang chăm',  color: '#f0a24b' },
+  { code: 'won',    label: 'Đã chốt',    color: '#12b76a' },
+  { code: 'lost',   label: 'Ngừng',      color: '#e0364f' }
+];
+app.get('/api/crm-meta', requireAuth, (req, res) => res.json({ status: CRM_STATUS }));
+app.post('/api/conversations/:id/crm', requireAuth, requirePerm('reply'), (req, res) => {
+  const all = getConvs(); const c = all[req.params.id];
+  if (!c) return res.status(404).json({ error: 'Không tìm thấy' });
+  if (!visibleTo(req.user, c)) return res.status(403).json({ error: 'Không có quyền' });
+  const b = req.body || {};
+  if (typeof b.note === 'string') c.note = b.note.slice(0, 2000);
+  if (typeof b.email === 'string') c.email = b.email.slice(0, 120);
+  if (typeof b.product === 'string') c.product = b.product.slice(0, 120);
+  if (b.dealValue !== undefined) c.dealValue = Number(b.dealValue) || 0;
+  if (b.status && CRM_STATUS.some((s) => s.code === b.status)) c.status = b.status;
+  saveConvs(all); broadcast({ type: 'crm', conversation: c });
+  res.json({ ok: true, conversation: c });
+});
+app.get('/api/crm', requireAuth, (req, res) => {
+  res.json(Object.values(getConvs())
+    .filter((c) => visibleTo(req.user, c))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], custLang:c.custLang||DEFAULT_CUST_LANG, status:c.status||'new', note:c.note||'', email:c.email||'', product:c.product||'', dealValue:c.dealValue||0, msgCount:(c.messages||[]).length, updatedAt:c.updatedAt })));
+});
+app.get('/api/stats', requireAuth, (req, res) => {
+  const now = Date.now(), DAY = 864e5;
+  const convs = Object.values(getConvs()).filter((c) => visibleTo(req.user, c));
+  const userName = {}; getUsers().forEach((u) => { userName[u.username] = u.name || u.username; });
+  const tagLabel = {}; getTags().forEach((t) => { tagLabel[t.id] = t.label; });
+  let totalMsgs = 0, won = 0, revenue = 0, today = 0, d7 = 0, d30 = 0;
+  const bySale = {}, byLine = {}, byTag = {};
+  for (const c of convs) {
+    const msgs = c.messages || [];
+    totalMsgs += msgs.length;
+    if (c.status === 'won') { won++; revenue += Number(c.dealValue) || 0; }
+    const line = c.channelLabel || c.channel || '—';
+    byLine[line] = (byLine[line] || 0) + 1;
+    for (const id of (c.tags || [])) { const lb = tagLabel[id]; if (lb) byTag[lb] = (byTag[lb] || 0) + 1; }
+    const sale = c.assignedTo ? (userName[c.assignedTo] || c.assignedTo) : '(Chưa gán)';
+    if (!bySale[sale]) bySale[sale] = { convs: 0, msgs: 0, won: 0 };
+    bySale[sale].convs++; bySale[sale].msgs += msgs.length; if (c.status === 'won') bySale[sale].won++;
+    for (const m of msgs) { const age = now - (m.ts || 0); if (age < DAY) today++; if (age < 7 * DAY) d7++; if (age < 30 * DAY) d30++; }
+  }
+  res.json({
+    totals: { convs: convs.length, msgs: totalMsgs, won, revenue, rate: convs.length ? Math.round(won / convs.length * 100) : 0 },
+    time: { today, d7, d30 },
+    bySale: Object.entries(bySale).map(([k, v]) => ({ name: k, convs: v.convs, msgs: v.msgs, won: v.won })).sort((a, b) => b.convs - a.convs),
+    byLine: Object.entries(byLine).map(([k, v]) => ({ label: k, count: v })).sort((a, b) => b.count - a.count),
+    byTag: Object.entries(byTag).map(([k, v]) => ({ label: k, count: v })).sort((a, b) => b.count - a.count)
+  });
 });
 
 // SSE
