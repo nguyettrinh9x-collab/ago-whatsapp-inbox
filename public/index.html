@@ -336,7 +336,7 @@ function renderMsgs(msgs){
       ${m.img?`<img class="msgimg" src="${esc(m.img)}" onclick="window.open('${esc(m.img)}','_blank')">`:''}
       ${m.orig?`<div>${esc(m.orig)}</div>`:''}
       ${m.trans?`<div class="tr"><span class="tag">${tag}</span><span>${esc(m.trans)}</span></div>`:''}
-      <div class="time">${fmt(m.ts)}${m.dir==='out'?' ✓✓':''}</div></div>`;
+      <div class="time">${fmt(m.ts)}${m.dir==='out'?tick(m):''}</div></div>`;
     box.appendChild(row);
   }
   box.scrollTop=box.scrollHeight;
@@ -430,6 +430,7 @@ function startStream(){
     if(ev.type==='wa-status'){ setWaDot(ev.status); if(document.getElementById('wamodal')) renderWA(); return; }
     if(ev.type==='tagged'){ if(currentConv&&ev.conversation.id===current){ currentConv.tags=ev.conversation.tags; renderTagbar(currentConv); renderInfo(currentConv); } loadConvs(); return; }
     if(ev.type==='lang'){ if(currentConv&&ev.conversation.id===current){ currentConv.custLang=ev.conversation.custLang; const ls=document.getElementById('langSel'); if(ls) ls.value=currentConv.custLang; updatePreviewFromInput(); } return; }
+    if(ev.type==='status'){ if(currentConv&&ev.convId===current){ for(const m of (currentConv.messages||[])){ if(m.waId===ev.waId&&(m.status||0)<ev.status) m.status=ev.status; } renderMsgs(currentConv.messages); } return; }
     if(ev.type==='message'&&ev.conversation.id===current) openConv(current);
     loadConvs();
   };
@@ -525,6 +526,29 @@ function initTabs(){
   if(tabs[2]) tabs[2].onclick=()=>switchView('stats');
 }
 function bar(label,count,max){ const pct=max?Math.round(count/max*100):0; return `<div class="bar"><span class="bn" title="${esc(label)}">${esc(label)}</span><span class="bt"><span class="bf" style="width:${pct}%"></span></span><span class="bv">${count}</span></div>`; }
+function tick(m){ const s=m.status||0; if(s>=3) return ' <span style="color:#53bdeb" title="Đã xem">✓✓</span>'; if(s===2) return ' <span style="color:#8a94a6" title="Đã nhận">✓✓</span>'; if(s===1) return ' <span style="color:#8a94a6" title="Đã gửi">✓</span>'; return ' <span style="color:#8a94a6" title="Đang gửi">🕐</span>'; }
+function svgDonut(items,total){
+  if(!total) return '<div style="color:#888;font-size:13px">Chưa có dữ liệu</div>';
+  let acc=0; const R=52,C=2*Math.PI*R; let segs='';
+  for(const it of items){ if(!it.count) continue; const len=it.count/total*C; segs+=`<circle r="${R}" cx="70" cy="70" fill="none" stroke="${it.color}" stroke-width="22" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 70 70)"></circle>`; acc+=len; }
+  const legend=items.map(it=>`<div style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:5px"><span style="width:11px;height:11px;border-radius:3px;background:${it.color};display:inline-block"></span>${esc(it.label)}<b style="margin-left:auto">${it.count}</b></div>`).join('');
+  return `<div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap"><svg width="140" height="140" viewBox="0 0 140 140">${segs}<text x="70" y="66" text-anchor="middle" font-size="22" font-weight="800" fill="#1e2a4a">${total}</text><text x="70" y="86" text-anchor="middle" font-size="11" fill="#8a94a6">khách</text></svg><div style="flex:1;min-width:150px">${legend}</div></div>`;
+}
+function svgBars(items){
+  const W=300,H=150; const max=Math.max(1,...items.map(x=>x.v)); const n=items.length||1; const bw=(W-16)/n;
+  let g=''; items.forEach((x,i)=>{ const h=Math.round(x.v/max*(H-40)); const xx=8+i*bw+bw*0.15; const w=bw*0.7; const y=H-20-h; g+=`<rect x="${xx.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${h}" rx="4" fill="#2f6bed"></rect><text x="${(xx+w/2).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8a94a6">${esc(x.l)}</text><text x="${(xx+w/2).toFixed(1)}" y="${(y-4)}" text-anchor="middle" font-size="11" font-weight="700" fill="#1e2a4a">${x.v}</text>`; });
+  return `<svg width="100%" height="150" viewBox="0 0 300 150">${g}</svg>`;
+}
+function chartsBlock(s){
+  const totalSt=s.byStatus.reduce((a,b)=>a+b.count,0);
+  const timeBars=svgBars([{l:'Hôm nay',v:s.time.today},{l:'7 ngày',v:s.time.d7},{l:'30 ngày',v:s.time.d30}]);
+  const saleBars=s.bySale.length?svgBars(s.bySale.slice(0,6).map(x=>({l:(x.name||'').split(' ')[0],v:x.convs}))):'<div style="color:#888;font-size:13px">—</div>';
+  return `<div class="panel"><h3>🥧 Tỉ lệ trạng thái khách</h3>${svgDonut(s.byStatus,totalSt)}</div>
+    <div class="cards" style="grid-template-columns:1fr 1fr">
+      <div class="panel" style="margin-bottom:0"><h3>📊 Tin theo thời gian</h3>${timeBars}</div>
+      <div class="panel" style="margin-bottom:0"><h3>📊 Khách theo sale</h3>${saleBars}</div>
+    </div>`;
+}
 async function loadStats(){
   const el=document.getElementById('statsView');
   el.innerHTML='<div class="vtitle">📊 Thống kê</div><div style="color:#888">Đang tải…</div>';
@@ -540,7 +564,7 @@ async function loadStats(){
       <div class="scard"><div class="num">${s.totals.rate}%</div><div class="lbl">Tỉ lệ chốt</div></div>
       <div class="scard"><div class="num">${money(s.totals.revenue)}</div><div class="lbl">Doanh thu chốt (VND)</div></div>
     </div>
-    <div class="panel"><h3>🕒 Tin nhắn theo thời gian</h3>
+    ${chartsBlock(s)}<div class="panel"><h3>🕒 Tin nhắn theo thời gian</h3>
       <div class="cards" style="margin-bottom:0">
         <div class="scard"><div class="num">${s.time.today}</div><div class="lbl">Hôm nay</div></div>
         <div class="scard"><div class="num">${s.time.d7}</div><div class="lbl">7 ngày</div></div>
