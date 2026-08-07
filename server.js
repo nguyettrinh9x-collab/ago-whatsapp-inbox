@@ -479,14 +479,25 @@ app.get('/api/crm', requireAuth, (req, res) => {
     .map((c) => ({ id:c.id, name:c.name, customer:c.customer, channelLabel:c.channelLabel, assignedTo:c.assignedTo, tags:c.tags||[], custLang:c.custLang||DEFAULT_CUST_LANG, status:c.status||'new', note:c.note||'', email:c.email||'', product:c.product||'', dealValue:c.dealValue||0, msgCount:(c.messages||[]).length, updatedAt:c.updatedAt })));
 });
 app.get('/api/stats', requireAuth, (req, res) => {
-  const now = Date.now(), DAY = 864e5;
-  const convs = Object.values(getConvs()).filter((c) => visibleTo(req.user, c));
+  const now = Date.now(), DAY = 864e5, TZ = 7 * 3600 * 1000;
+  const from = Number(req.query.from) || 0;
+  const to = Number(req.query.to) || (now + DAY);
+  const inR = (ts) => ts >= from && ts <= to;
+  const allConvs = Object.values(getConvs()).filter((c) => visibleTo(req.user, c));
   const userName = {}; getUsers().forEach((u) => { userName[u.username] = u.name || u.username; });
   const tagLabel = {}; getTags().forEach((t) => { tagLabel[t.id] = t.label; });
   let totalMsgs = 0, won = 0, revenue = 0, today = 0, d7 = 0, d30 = 0;
   const bySale = {}, byLine = {}, byTag = {}, byStatus = {};
-  for (const c of convs) {
-    const msgs = c.messages || [];
+  const toDay = Math.floor(((to > now ? now : to) + TZ) / DAY);
+  const fromDay = from ? Math.floor((from + TZ) / DAY) : (toDay - 13);
+  const span = Math.min(Math.max(toDay - fromDay + 1, 1), 62);
+  const startDay = toDay - span + 1;
+  const dayCounts = new Array(span).fill(0);
+  let convCount = 0;
+  for (const c of allConvs) {
+    const msgs = (c.messages || []).filter((m) => inR(m.ts || 0));
+    if (!msgs.length) continue;
+    convCount++;
     totalMsgs += msgs.length;
     byStatus[c.status || 'new'] = (byStatus[c.status || 'new'] || 0) + 1;
     if (c.status === 'won') { won++; revenue += Number(c.dealValue) || 0; }
@@ -496,11 +507,14 @@ app.get('/api/stats', requireAuth, (req, res) => {
     const sale = c.assignedTo ? (userName[c.assignedTo] || c.assignedTo) : '(Chưa gán)';
     if (!bySale[sale]) bySale[sale] = { convs: 0, msgs: 0, won: 0 };
     bySale[sale].convs++; bySale[sale].msgs += msgs.length; if (c.status === 'won') bySale[sale].won++;
-    for (const m of msgs) { const age = now - (m.ts || 0); if (age < DAY) today++; if (age < 7 * DAY) d7++; if (age < 30 * DAY) d30++; }
+    for (const m of msgs) { const age = now - (m.ts || 0); if (age < DAY) today++; if (age < 7 * DAY) d7++; if (age < 30 * DAY) d30++; const idx = Math.floor(((m.ts || 0) + TZ) / DAY) - startDay; if (idx >= 0 && idx < span) dayCounts[idx]++; }
   }
+  const byDay = [];
+  for (let i = 0; i < span; i++) { const d = new Date((startDay + i) * DAY + DAY / 2); byDay.push({ label: d.getUTCDate() + '/' + (d.getUTCMonth() + 1), count: dayCounts[i] }); }
   res.json({
-    totals: { convs: convs.length, msgs: totalMsgs, won, revenue, rate: convs.length ? Math.round(won / convs.length * 100) : 0 },
+    totals: { convs: convCount, msgs: totalMsgs, won, revenue, rate: convCount ? Math.round(won / convCount * 100) : 0 },
     time: { today, d7, d30 },
+    byDay,
     byStatus: CRM_STATUS.map((s) => ({ code: s.code, label: s.label, color: s.color, count: byStatus[s.code] || 0 })),
     bySale: Object.entries(bySale).map(([k, v]) => ({ name: k, convs: v.convs, msgs: v.msgs, won: v.won })).sort((a, b) => b.convs - a.convs),
     byLine: Object.entries(byLine).map(([k, v]) => ({ label: k, count: v })).sort((a, b) => b.count - a.count),
