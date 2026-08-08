@@ -157,6 +157,15 @@
   .crmpanel label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px}
   .crmpanel input,.crmpanel select,.crmpanel textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px}
   .crmpanel textarea{height:90px;resize:vertical}
+.fbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 14px}
+.fbtn{border:1px solid #d0d7e2;background:#fff;color:#334;border-radius:7px;padding:6px 11px;font-size:12.5px;cursor:pointer;font-weight:500}
+.fbtn:hover{background:#f0f4fb;border-color:#2f6bed}
+.fbtn.on{background:#2f6bed;border-color:#2f6bed;color:#fff}
+.fbtn.go{background:#12b76a;border-color:#12b76a;color:#fff;margin-left:2px}
+.fbtn.go:hover{background:#0ea25c}
+.fdate{display:inline-flex;align-items:center;gap:6px;margin-left:4px}
+.fdate input[type=date]{border:1px solid #d0d7e2;border-radius:7px;padding:5px 8px;font-size:12.5px;color:#334}
+.farrow{color:#889}
 </style>
 </head>
 <body>
@@ -539,11 +548,59 @@ function svgBars(items){
   let g=''; items.forEach((x,i)=>{ const h=Math.round(x.v/max*(H-40)); const xx=8+i*bw+bw*0.15; const w=bw*0.7; const y=H-20-h; g+=`<rect x="${xx.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${h}" rx="4" fill="#2f6bed"></rect><text x="${(xx+w/2).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8a94a6">${esc(x.l)}</text><text x="${(xx+w/2).toFixed(1)}" y="${(y-4)}" text-anchor="middle" font-size="11" font-weight="700" fill="#1e2a4a">${x.v}</text>`; });
   return `<svg width="100%" height="150" viewBox="0 0 300 150">${g}</svg>`;
 }
+let statFrom=0, statTo=0, statPreset='all';
+function isoLocal(ts){ const d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dayStart(d){ d.setHours(0,0,0,0); return d.getTime(); }
+function dayEnd(d){ d.setHours(23,59,59,999); return d.getTime(); }
+function presetRange(p){
+  const now=new Date(); let from=0,to=0; const dow=(now.getDay()+6)%7;
+  if(p==='today'){ from=dayStart(new Date(now)); to=dayEnd(new Date(now)); }
+  else if(p==='yesterday'){ const y=new Date(now); y.setDate(y.getDate()-1); from=dayStart(new Date(y)); to=dayEnd(new Date(y)); }
+  else if(p==='thisweek'){ const s=new Date(now); s.setDate(s.getDate()-dow); from=dayStart(s); to=dayEnd(new Date(now)); }
+  else if(p==='lastweek'){ const s=new Date(now); s.setDate(s.getDate()-dow-7); const e=new Date(s); e.setDate(e.getDate()+6); from=dayStart(s); to=dayEnd(e); }
+  else if(p==='7days'){ const s=new Date(now); s.setDate(s.getDate()-6); from=dayStart(s); to=dayEnd(new Date(now)); }
+  else if(p==='thismonth'){ const s=new Date(now.getFullYear(),now.getMonth(),1); from=dayStart(s); to=dayEnd(new Date(now)); }
+  else if(p==='lastmonth'){ const s=new Date(now.getFullYear(),now.getMonth()-1,1); const e=new Date(now.getFullYear(),now.getMonth(),0); from=dayStart(s); to=dayEnd(e); }
+  else if(p==='30days'){ const s=new Date(now); s.setDate(s.getDate()-29); from=dayStart(s); to=dayEnd(new Date(now)); }
+  else if(p==='60days'){ const s=new Date(now); s.setDate(s.getDate()-59); from=dayStart(s); to=dayEnd(new Date(now)); }
+  return {from,to};
+}
+function setStatPreset(p){ statPreset=p; if(p==='all'){ statFrom=0; statTo=0; } else { const r=presetRange(p); statFrom=r.from; statTo=r.to; } loadStats(); }
+function applyStatCustom(){
+  const f=document.getElementById('statFromInput'), t=document.getElementById('statToInput');
+  if(f&&f.value){ statFrom=dayStart(new Date(f.value+'T00:00:00')); }
+  if(t&&t.value){ statTo=dayEnd(new Date(t.value+'T00:00:00')); }
+  statPreset='custom'; loadStats();
+}
+function filterBar(){
+  const presets=[['today','Hôm nay'],['yesterday','Hôm qua'],['thisweek','Tuần này'],['lastweek','Tuần trước'],['7days','7 ngày'],['thismonth','Tháng này'],['lastmonth','Tháng trước'],['30days','30 ngày'],['60days','60 ngày'],['all','Tất cả']];
+  const btns=presets.map(p=>'<button class="fbtn'+(statPreset===p[0]?' on':'')+'" onclick="setStatPreset(\''+p[0]+'\')">'+p[1]+'</button>').join('');
+  const fv=statFrom?isoLocal(statFrom):'';
+  const tv=statTo?isoLocal(statTo):'';
+  return '<div class="fbar">'+btns+'<span class="fdate"><input type="date" id="statFromInput" value="'+fv+'"><span class="farrow">→</span><input type="date" id="statToInput" value="'+tv+'"><button class="fbtn go" onclick="applyStatCustom()">Lọc</button></span></div>';
+}
+function svgDayBars(days){
+  if(!days||!days.length) return '<div style="color:#888;font-size:13px">—</div>';
+  const max=Math.max(1,...days.map(d=>d.count));
+  const n=days.length, W=Math.max(320,n*26), H=150, pad=6, gap=6;
+  const step=(W-pad*2)/n, bw=Math.max(5,step-gap);
+  let bars='';
+  days.forEach((d,i)=>{
+    const x=pad+i*step;
+    const h=Math.round((H-38)*d.count/max);
+    const y=H-22-h;
+    bars+='<rect x="'+x.toFixed(1)+'" y="'+y+'" width="'+bw.toFixed(1)+'" height="'+Math.max(h,1)+'" rx="2" fill="#2f6bed"><title>'+d.label+': '+d.count+'</title></rect>';
+    if(d.count>0) bars+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y-3)+'" font-size="9" text-anchor="middle" fill="#555">'+d.count+'</text>';
+    if(n<=32||i%3===0) bars+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(H-7)+'" font-size="8" text-anchor="middle" fill="#999">'+d.label+'</text>';
+  });
+  return '<div style="overflow-x:auto"><svg width="'+W+'" height="'+H+'" style="max-width:100%;display:block">'+bars+'</svg></div>';
+}
 function chartsBlock(s){
   const totalSt=s.byStatus.reduce((a,b)=>a+b.count,0);
   const timeBars=svgBars([{l:'Hôm nay',v:s.time.today},{l:'7 ngày',v:s.time.d7},{l:'30 ngày',v:s.time.d30}]);
   const saleBars=s.bySale.length?svgBars(s.bySale.slice(0,6).map(x=>({l:(x.name||'').split(' ')[0],v:x.convs}))):'<div style="color:#888;font-size:13px">—</div>';
-  return `<div class="panel"><h3>🥧 Tỉ lệ trạng thái khách</h3>${svgDonut(s.byStatus,totalSt)}</div>
+  return `<div class="panel"><h3>📅 Tin nhắn theo ngày</h3>${svgDayBars(s.byDay||[])}</div>
+    <div class="panel"><h3>🥧 Tỉ lệ trạng thái khách</h3>${svgDonut(s.byStatus,totalSt)}</div>
     <div class="cards" style="grid-template-columns:1fr 1fr">
       <div class="panel" style="margin-bottom:0"><h3>📊 Tin theo thời gian</h3>${timeBars}</div>
       <div class="panel" style="margin-bottom:0"><h3>📊 Khách theo sale</h3>${saleBars}</div>
@@ -552,11 +609,12 @@ function chartsBlock(s){
 async function loadStats(){
   const el=document.getElementById('statsView');
   el.innerHTML='<div class="vtitle">📊 Thống kê</div><div style="color:#888">Đang tải…</div>';
-  let s; try{ s=await api('/api/stats'); }catch(ex){ el.innerHTML='<div class="vtitle">📊 Thống kê</div><p style="color:#e0364f">Lỗi: '+esc(ex.message)+'</p>'; return; }
+  let s; try{ s=await api('/api/stats?from='+statFrom+'&to='+statTo); }catch(ex){ el.innerHTML='<div class="vtitle">📊 Thống kê</div><p style="color:#e0364f">Lỗi: '+esc(ex.message)+'</p>'; return; }
   const money=(n)=>n?Number(n).toLocaleString('vi-VN'):'0';
   const maxLine=Math.max(1,...s.byLine.map(x=>x.count));
   const maxTag=Math.max(1,...s.byTag.map(x=>x.count));
   el.innerHTML=`<div class="vtitle">📊 Thống kê</div>
+    ${filterBar()}
     <div class="cards">
       <div class="scard"><div class="num">${s.totals.convs}</div><div class="lbl">Khách hội thoại</div></div>
       <div class="scard"><div class="num">${s.totals.msgs}</div><div class="lbl">Tổng tin nhắn</div></div>
